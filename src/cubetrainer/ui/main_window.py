@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QMainWindow, QTabWidget, QWidget
 
 from cubetrainer.db import Database, StoredSolveList
+from cubetrainer.ui.learn_page import LearnPage
 from cubetrainer.ui.timer_page import TimerPage
 
 #: Titles of the top-level tabs, in display order.
@@ -31,11 +32,12 @@ class MainWindow(QMainWindow):
     Attributes:
         tabs: The tab widget holding the Timer, Learn and Stats pages.
         timer_page: The full-solve timer page shown in the Timer tab.
+        learn_page: The case list shown in the Learn tab.
 
     """
 
     def __init__(self, db: Database) -> None:
-        """Create the window and its tabs (Learn and Stats are placeholders for now).
+        """Create the window and its tabs (Stats is a placeholder for now).
 
         Args:
             db: The app database.
@@ -49,6 +51,7 @@ class MainWindow(QMainWindow):
         timer_solves = StoredSolveList(db, db.get_or_create_session())
         self.timer_page: TimerPage = TimerPage(solves=timer_solves)
         self.tabs.addTab(self.timer_page, TAB_TITLES[0])
-        for title in TAB_TITLES[1:]:
-            self.tabs.addTab(_placeholder(f"{title} — coming soon"), title)
+        self.learn_page: LearnPage = LearnPage(db)
+        self.tabs.addTab(self.learn_page, TAB_TITLES[1])
+        self.tabs.addTab(_placeholder(f"{TAB_TITLES[2]} — coming soon"), TAB_TITLES[2])
         self.setCentralWidget(self.tabs)

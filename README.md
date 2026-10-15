@@ -25,7 +25,15 @@ Statistics follow cstimer and the WCA regulations: averages trim 5% (rounded up)
 each end, a DNF counts as the worst result, single times are truncated to hundredths
 and averages and means are rounded to the nearest hundredth.
 
-**Learn** and **Stats** tabs: coming soon.
+**Learn tab**
+
+- The 21 PLL cases, jperm-style: image, name, default algorithm and group.
+- Case images are drawn from the algorithm itself (yellow top, green front), with
+  arrows showing how the pieces move; a final AUF in the algorithm is ignored.
+- Click a case image to cycle its status: unlearned → learning → finished (shown as
+  the image's background colour, and named on hover). Statuses are saved.
+
+**Trainer** and **Stats** tab: coming soon.
 
 ## Requirements
 
@@ -38,7 +46,7 @@ and averages and means are rounded to the nearest hundredth.
 
 ## Data
 
-Solves are stored in a SQLite database:
+Solves and case statuses are stored in a SQLite database:
 
 - macOS: `~/Library/Application Support/CubeTrainer/cubetrainer.db`
 - elsewhere: the platform's user data directory (via `platformdirs`), e.g.
@@ -79,6 +87,11 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
       cube/
         model.py           sticker-level cube model and move notation
         scramble.py        random-state scrambles
+        render.py          top-down last-layer images
+      cases/
+        catalog.py         case sets, cases, learning status
+        recognition.py     identify PLL cases regardless of AUF
+        data/pll.json      bundled PLL cases and default algorithms
       ui/                  Qt widgets: main window, timer page, panels, dialogs
     tests/                 pytest + pytest-qt
 

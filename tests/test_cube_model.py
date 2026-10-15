@@ -9,6 +9,7 @@ from cubetrainer.cube.model import (
     format_alg,
     invert_alg,
     parse_alg,
+    state_solved_by,
 )
 
 T_PERM = "R U R' U' R' F R2 U' R' U' R U R' F'"
@@ -115,3 +116,28 @@ def test_move_validation() -> None:
         Move("Q", 1)
     with pytest.raises(ValueError, match="turns"):
         Move("R", 4)
+
+
+@pytest.mark.parametrize(
+    "alg",
+    [
+        "R U R' U'",
+        "x R' U R' D2 R U' R' D2 R2",
+        "R' U R' U' y R' F' R2 U' R' U R' F R F",
+    ],
+)
+def test_state_solved_by_keeps_centres_home(alg: str) -> None:
+    """The returned state is held in standard orientation and the alg solves it."""
+    moves = parse_alg(alg)
+    state = state_solved_by(moves)
+
+    assert all(state.stickers[9 * f + 4] == 9 * f + 4 for f in range(6))
+    assert state.apply(moves).is_solved()
+
+
+def test_state_solved_by_rotation_matches_rotation_free_alg() -> None:
+    """An alg starting with x gives the same case as its rotation-free equivalent."""
+    with_rotation = state_solved_by(parse_alg("x R' U R' D2 R U' R' D2 R2"))
+    without = state_solved_by(parse_alg("R' F R' B2 R F' R' B2 R2"))
+
+    assert with_rotation == without

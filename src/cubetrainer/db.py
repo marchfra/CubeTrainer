@@ -14,6 +14,7 @@ from typing import override
 
 import platformdirs
 
+from cubetrainer.cases.catalog import CaseStatus
 from cubetrainer.solves import Penalty, Solve, SolveList
 
 #: Environment variable overriding where the database lives (useful for development).
@@ -50,6 +51,14 @@ MIGRATIONS: tuple[str, ...] = (
         created_at TEXT NOT NULL
     );
     CREATE INDEX solves_by_session ON solves(session_id, id);
+    """,
+    """
+    CREATE TABLE case_progress (
+        set_id TEXT NOT NULL,
+        case_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        PRIMARY KEY (set_id, case_id)
+    );
     """,
 )
 
@@ -219,6 +228,38 @@ class Database:
         """
         with self._conn:
             self._conn.execute("DELETE FROM solves WHERE id = ?", (solve_id,))
+
+    def load_case_statuses(self, set_id: str) -> dict[str, CaseStatus]:
+        """Load the learning status of every case of a set that has one stored.
+
+        Args:
+            set_id: The case set, e.g. ``"pll"``.
+
+        Returns:
+            Statuses keyed by case id; cases never clicked are absent (unlearned).
+
+        """
+        rows = self._conn.execute(
+            "SELECT case_id, status FROM case_progress WHERE set_id = ?",
+            (set_id,),
+        )
+        return {case_id: CaseStatus(status) for case_id, status in rows}
+
+    def set_case_status(self, set_id: str, case_id: str, status: CaseStatus) -> None:
+        """Store the learning status of a case.
+
+        Args:
+            set_id: The case set.
+            case_id: The case.
+            status: The new status.
+
+        """
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO case_progress (set_id, case_id, status) VALUES (?, ?, ?)"
+                " ON CONFLICT (set_id, case_id) DO UPDATE SET status = excluded.status",
+                (set_id, case_id, status.value),
+            )
 
 
 class StoredSolveList(SolveList):

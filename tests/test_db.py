@@ -8,6 +8,7 @@ from pathlib import Path
 import platformdirs
 import pytest
 
+from cubetrainer.cases.catalog import CaseStatus
 from cubetrainer.db import (
     DATA_DIR_ENV,
     DB_FILENAME,
@@ -185,3 +186,18 @@ def test_other_platforms_use_platformdirs(
     )
 
     assert default_db_path() == tmp_path / "share" / "CubeTrainer" / DB_FILENAME
+
+
+def test_case_statuses_round_trip(db: Database) -> None:
+    """Statuses are stored per set and case, and can be overwritten."""
+    assert db.load_case_statuses("pll") == {}
+
+    db.set_case_status("pll", "T", CaseStatus.LEARNING)
+    db.set_case_status("pll", "T", CaseStatus.FINISHED)
+    db.set_case_status("pll", "Ua", CaseStatus.LEARNING)
+    db.set_case_status("oll", "T", CaseStatus.LEARNING)
+
+    assert db.load_case_statuses("pll") == {
+        "T": CaseStatus.FINISHED,
+        "Ua": CaseStatus.LEARNING,
+    }

@@ -85,7 +85,7 @@ def _dot(u: Vec, v: Vec) -> int:
     return u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
 
 
-def _rotate_clockwise(v: Vec, axis: Vec) -> Vec:
+def rotate_clockwise(v: Vec, axis: Vec) -> Vec:
     """Rotate a vector a clockwise quarter turn as seen from the tip of ``axis``.
 
     Args:
@@ -136,8 +136,8 @@ def _quarter_turn_permutation(base: str) -> tuple[int, ...]:
     for position, normal in STICKERS:
         if in_layer(_dot(position, axis)):
             target = (
-                _rotate_clockwise(position, axis),
-                _rotate_clockwise(normal, axis),
+                rotate_clockwise(position, axis),
+                rotate_clockwise(normal, axis),
             )
             perm.append(_STICKER_INDEX[target])
         else:
@@ -325,3 +325,52 @@ class CubeState:
 
 #: The solved cube.
 SOLVED: CubeState = CubeState()
+
+
+def state_solved_by(moves: Sequence[Move]) -> CubeState:
+    """Return the state, held in standard orientation, that ``moves`` solve.
+
+    For algorithms without net rotation this is just the inverse applied to a solved
+    cube. Algorithms like ``x L2 D2 ...`` end with the cube held differently, so the
+    inverse is applied starting from the matching rotated solved cube; that way the
+    case appears in the orientation the solver holds the cube before starting.
+
+    Args:
+        moves: An algorithm that solves the returned state (rotations allowed).
+
+    Returns:
+        The state with every centre on its home face.
+
+    """
+    undo = invert_alg(moves)
+    for rotation in _all_orientations():
+        candidate = SOLVED.apply([*rotation, *undo])
+        if all(candidate.stickers[i] == i for i in _CENTERS):
+            return candidate
+    msg = "no rotation restores the centres"  # unreachable: rotations form a group
+    raise AssertionError(msg)
+
+
+#: Facelet indices of the six centres.
+_CENTERS: tuple[int, ...] = tuple(9 * f + 4 for f in range(6))
+
+
+@cache
+def _all_orientations() -> tuple[tuple[Move, ...], ...]:
+    """List one rotation sequence for each of the 24 orientations of the cube.
+
+    Returns:
+        24 sequences of ``x``/``y``/``z`` moves, each reaching a distinct orientation
+        (the first is the empty sequence).
+
+    """
+    found: dict[tuple[int, ...], tuple[Move, ...]] = {}
+    frontier: list[tuple[Move, ...]] = [()]
+    while frontier:
+        sequence = frontier.pop(0)
+        centers = tuple(SOLVED.apply(sequence).stickers[i] for i in _CENTERS)
+        if centers in found:
+            continue
+        found[centers] = sequence
+        frontier.extend((*sequence, Move(base, 1)) for base in "xyz")
+    return tuple(found.values())
