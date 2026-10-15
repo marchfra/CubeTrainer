@@ -1,0 +1,42 @@
+[project]
+name = "cubetrainer"
+version = "0.1.0"
+description = "CFOP trainer: a cstimer-style timer plus a jperm-style OLL/PLL algorithm trainer."
+readme = "README.md"
+authors = [
+    { name = "Francesco Marchisotti", email = "francesco.marchisotti@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "pyside6>=6.12.0",
+]
+
+[project.scripts]
+cubetrainer = "cubetrainer.app:main"
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-qt>=4.5.0",
+    "ruff>=0.17.1",
+    "ty>=0.0.88",
+]
+
+[tool.ruff]
+# A project-level ruff config replaces the global one, so extend it explicitly.
+extend = "~/.config/ruff/ruff.toml"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # pytest relies on bare asserts
+    "PLR2004", # expected values in tests are magic numbers by nature
+    "SLF001",  # tests may inspect private state
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"
