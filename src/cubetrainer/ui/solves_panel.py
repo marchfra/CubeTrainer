@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from cubetrainer import stats
-from cubetrainer.formatting import format_solve, format_value
+from cubetrainer.formatting import format_average, format_solve, format_value
 from cubetrainer.solves import SolveList
 
 #: Averages shown in the summary and as table columns.
@@ -128,7 +128,7 @@ class SolvesTableModel(QAbstractTableModel):
             return str(i + 1)
         if column == 1:
             return format_solve(self._solves.solves[i])
-        return format_value(self._averages[AVERAGE_SIZES[column - 2]][i])
+        return format_average(self._averages[AVERAGE_SIZES[column - 2]][i])
 
     @override
     def headerData(
@@ -210,11 +210,11 @@ class SummaryPanel(QWidget):
         self.cells["time", "best"].setText(format_value(stats.best_single(values)))
         for n in AVERAGE_SIZES:
             current = stats.current_average(values, n)
-            self.cells[f"ao{n}", "current"].setText(format_value(current))
+            self.cells[f"ao{n}", "current"].setText(format_average(current))
             best = stats.best_average(values, n)
-            self.cells[f"ao{n}", "best"].setText(format_value(best))
+            self.cells[f"ao{n}", "best"].setText(format_average(best))
         finished = sum(1 for v in values if math.isfinite(v))
-        mean = format_value(stats.mean_excluding_dnf(values))
+        mean = format_average(stats.mean_excluding_dnf(values))
         self.mean_label.setText(f"solves: {finished}/{len(values)}    mean: {mean}")
 
 

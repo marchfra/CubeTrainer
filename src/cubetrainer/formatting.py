@@ -10,7 +10,7 @@ MISSING: str = "-"
 
 
 def format_value(value: float | None) -> str:
-    """Format a statistic value.
+    """Format a single time, truncated to centiseconds (WCA 9f1).
 
     Args:
         value: Milliseconds, ``math.inf`` for DNF, or None if not available.
@@ -24,6 +24,24 @@ def format_value(value: float | None) -> str:
     if math.isinf(value):
         return "DNF"
     return format_ms(int(value))
+
+
+def format_average(value: float | None) -> str:
+    """Format an average or mean, rounded half up to the nearest centisecond (WCA 9f2).
+
+    Single times are truncated instead (see ``format_value``), as on a stackmat.
+
+    Args:
+        value: Milliseconds, ``math.inf`` for DNF, or None if not available.
+
+    Returns:
+        ``"-"`` for None, ``"DNF"`` for infinity, otherwise e.g. ``"12.35"`` for
+        12345 ms.
+
+    """
+    if value is None or math.isinf(value):
+        return format_value(value)
+    return format_ms(math.floor(value / 10 + 0.5) * 10)
 
 
 def format_solve(solve: Solve) -> str:

@@ -74,6 +74,7 @@ class TimerPage(QWidget):
 
     def __init__(
         self,
+        solves: SolveList | None = None,
         generate: Callable[[], str] | None = None,
         clock: Callable[[], int] = time.perf_counter_ns,
         parent: QWidget | None = None,
@@ -81,13 +82,14 @@ class TimerPage(QWidget):
         """Create the page.
 
         Args:
+            solves: The session's solves; an empty, unsaved list if omitted.
             generate: Scramble generator; defaults to random-state full-cube scrambles.
             clock: Monotonic clock in nanoseconds, passed to the timer.
             parent: Optional parent widget.
 
         """
         super().__init__(parent)
-        self.solves: SolveList = SolveList()
+        self.solves: SolveList = solves if solves is not None else SolveList()
         self.confirm: Callable[[str], bool] = lambda q: ask_confirmation(self, q)
         self.run_dialog: Callable[[QDialog], int] = lambda d: d.exec()
         self._solve_scramble: str = ""
@@ -154,9 +156,13 @@ class TimerPage(QWidget):
             index: Position of the solve in the list (0 is the oldest).
 
         """
-        dialog = SolveDialog(self.solves.solves[index], index + 1, self)
+        solve = self.solves.solves[index]
+        dialog = SolveDialog(solve, index + 1, self)
         if self.run_dialog(dialog) == SolveDialog.DELETED:
             self.solves.delete(index)
+        else:
+            # The dialog edits the solve in place; go through the list so it's saved.
+            self.solves.set_penalty(index, solve.penalty)
         self.solves_panel.refresh()
 
     def _on_solve_started(self) -> None:

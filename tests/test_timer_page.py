@@ -8,6 +8,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QDialog, QPushButton
 from pytestqt.qtbot import QtBot
 
+from cubetrainer.db import Database, StoredSolveList
 from cubetrainer.solves import Penalty
 from cubetrainer.ui.scramble_bar import _reserve_width
 from cubetrainer.ui.solve_dialog import SolveDialog
@@ -220,3 +221,27 @@ def test_solve_dialog_result_is_applied(
     assert shown[0].windowTitle() == "Solve #1"
     assert len(page.solves) == remaining
     assert page.solves_panel.model.rowCount() == remaining
+
+
+def test_dialog_penalty_change_is_saved(qtbot: QtBot, clock: FakeClock) -> None:
+    """A penalty chosen in the solve dialog is written to the database."""
+    db = Database(":memory:")
+    session = db.get_or_create_session()
+    page = TimerPage(
+        solves=StoredSolveList(db, session),
+        generate=lambda: "s",
+        clock=clock,
+    )
+    qtbot.addWidget(page)
+    page.show()
+    do_solve(qtbot, page, clock, 1_000)
+
+    def run_dialog(dialog: QDialog) -> int:
+        assert isinstance(dialog, SolveDialog)
+        dialog.penalty_buttons[Penalty.DNF].setChecked(True)
+        return 0
+
+    page.run_dialog = run_dialog
+    page.show_solve(0)
+
+    assert [s.penalty for s in db.load_solves(session)] == [Penalty.DNF]

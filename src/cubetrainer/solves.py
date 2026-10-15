@@ -26,6 +26,7 @@ class Solve:
         scramble: The scramble that was shown for this solve.
         penalty: Penalty applied to the solve.
         created_at: When the solve finished (timezone-aware, UTC).
+        id: Database id, or None if the solve hasn't been stored.
 
     """
 
@@ -33,6 +34,7 @@ class Solve:
     scramble: str
     penalty: Penalty = Penalty.OK
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    id: int | None = None
 
     @property
     def value(self) -> float:

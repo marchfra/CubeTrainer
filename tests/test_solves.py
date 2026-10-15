@@ -6,6 +6,7 @@ from datetime import UTC
 import pytest
 
 from cubetrainer.formatting import (
+    format_average,
     format_solve,
     format_solve_detailed,
     format_value,
@@ -49,6 +50,23 @@ def test_solve_list_add_delete_and_penalty() -> None:
 def test_format_value(value: float | None, text: str) -> None:
     """Values format as cstimer shows them."""
     assert format_value(value) == text
+
+
+@pytest.mark.parametrize(
+    ("value", "text"),
+    [
+        (None, "-"),
+        (math.inf, "DNF"),
+        (12_344.9, "12.34"),
+        (12_345.0, "12.35"),  # half rounds up
+        (11_606.67, "11.61"),  # truncation would give 11.60
+        (9_995.0, "10.00"),
+        (59_995.0, "1:00.00"),
+    ],
+)
+def test_format_average_rounds_to_centiseconds(value: float | None, text: str) -> None:
+    """Averages and means are rounded half up, not truncated."""
+    assert format_average(value) == text
 
 
 @pytest.mark.parametrize(

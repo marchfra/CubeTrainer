@@ -3,6 +3,8 @@ name = "cubetrainer"
 version = "0.1.0"
 description = "CFOP trainer: a cstimer-style timer plus a jperm-style OLL/PLL algorithm trainer."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Francesco Marchisotti", email = "francesco.marchisotti@gmail.com" }
 ]
@@ -10,6 +12,7 @@ requires-python = ">=3.13"
 dependencies = [
     "kociemba>=1.2.1",
     "numpy>=2.5.4",
+    "platformdirs>=4.13.0",
     "pyside6>=6.12.0",
 ]
 

@@ -116,3 +116,16 @@ def test_empty_list(qtbot: QtBot) -> None:
     assert panel.model.rowCount() == 0
     assert panel.summary.cells["time", "current"].text() == "-"
     assert panel.summary.mean_label.text() == "solves: 0/0    mean: -"
+
+
+def test_averages_are_rounded_but_singles_truncated(qtbot: QtBot) -> None:
+    """ao5 of 11.606... shows 11.61, while a 12.349 single shows 12.34."""
+    solve_list = SolveList()
+    for ms in (12_340, 10_980, 16_020, 11_500, 9_870, 12_349):
+        solve_list.add(Solve(ms, ""))
+    panel = SolvesPanel(solve_list)
+    qtbot.addWidget(panel)
+
+    assert cell(panel, 1, 2) == "11.61"  # (12.34 + 10.98 + 11.50) / 3 = 11.6067
+    assert cell(panel, 0, 1) == "12.34"
+    assert panel.summary.cells["ao5", "best"].text() == "11.61"

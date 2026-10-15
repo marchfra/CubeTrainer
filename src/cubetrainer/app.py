@@ -4,6 +4,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
+from cubetrainer.db import Database, default_db_path
 from cubetrainer.ui.main_window import MainWindow
 
 
@@ -14,6 +15,8 @@ def main() -> None:
     """
     app = QApplication(sys.argv)
     app.setApplicationName("CubeTrainer")
-    window = MainWindow()
+    db = Database(default_db_path())
+    app.aboutToQuit.connect(db.close)
+    window = MainWindow(db)
     window.show()
     sys.exit(app.exec())
