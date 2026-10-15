@@ -5,46 +5,14 @@ from itertools import count
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QDialog, QPushButton
 from pytestqt.qtbot import QtBot
 
+from cubetrainer.solves import Penalty
 from cubetrainer.ui.scramble_bar import _reserve_width
+from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.timer_page import TimerPage
-
-MS = 1_000_000  # nanoseconds per millisecond
-
-
-class FakeClock:
-    """Manually advanced clock returning nanoseconds.
-
-    Attributes:
-        now_ns: The current time in nanoseconds.
-
-    """
-
-    def __init__(self) -> None:
-        """Start the clock at zero."""
-        self.now_ns: int = 0
-
-    def __call__(self) -> int:
-        """Return the current time.
-
-        Returns:
-            The current time in nanoseconds.
-
-        """
-        return self.now_ns
-
-
-@pytest.fixture
-def clock() -> FakeClock:
-    """Provide a fresh fake clock.
-
-    Returns:
-        The clock.
-
-    """
-    return FakeClock()
+from tests.helpers import FakeClock, do_solve
 
 
 @pytest.fixture
@@ -125,11 +93,7 @@ def test_solve_moves_to_new_scramble(
     page.scramble_bar.show_next()
     page.scramble_bar.show_previous()
 
-    qtbot.keyPress(page, Qt.Key.Key_Space)
-    clock.now_ns += 300 * MS
-    qtbot.keyRelease(page, Qt.Key.Key_Space)
-    clock.now_ns += 5_000 * MS
-    qtbot.keyPress(page, Qt.Key.Key_Space)
+    do_solve(qtbot, page, clock, 5_000)
 
     assert page.scramble_bar.label.text() == "s2"
 
@@ -139,3 +103,120 @@ def test_buttons_do_not_take_focus(page: TimerPage) -> None:
     bar = page.scramble_bar
     for button in (bar.prev_button, bar.next_button, bar.copy_button):
         assert button.focusPolicy() == Qt.FocusPolicy.NoFocus
+
+
+def test_solve_is_recorded_with_its_scramble(
+    qtbot: QtBot,
+    page: TimerPage,
+    clock: FakeClock,
+) -> None:
+    """A finished solve lands in the table with the scramble shown at its start."""
+    do_solve(qtbot, page, clock, 8_765)
+
+    assert len(page.solves) == 1
+    assert page.solves.solves[0].time_ms == 8_765
+    assert page.solves.solves[0].scramble == "s0"
+    assert page.solves_panel.model.rowCount() == 1
+
+
+def press_shortcut(qtbot: QtBot, page: TimerPage, key: Qt.Key) -> None:
+    """Press Cmd+key (Qt's ControlModifier is Cmd on macOS).
+
+    Args:
+        qtbot: pytest-qt helper.
+        page: The page (its window must be active for shortcuts to fire).
+        key: The key pressed together with Cmd.
+
+    """
+    qtbot.keyClick(page, key, Qt.KeyboardModifier.ControlModifier)
+
+
+@pytest.mark.parametrize(
+    ("key", "penalty"),
+    [
+        (Qt.Key.Key_2, Penalty.PLUS_TWO),
+        (Qt.Key.Key_3, Penalty.DNF),
+    ],
+)
+def test_penalty_shortcuts_apply_to_last_solve(
+    qtbot: QtBot,
+    page: TimerPage,
+    clock: FakeClock,
+    key: Qt.Key,
+    penalty: Penalty,
+) -> None:
+    """Cmd+2 / Cmd+3 set +2 / DNF on the last solve, and Cmd+1 clears it."""
+    do_solve(qtbot, page, clock, 1_000)
+    do_solve(qtbot, page, clock, 2_000)
+    page.activateWindow()
+    qtbot.waitUntil(page.isActiveWindow)
+
+    press_shortcut(qtbot, page, key)
+    assert page.solves.solves[-1].penalty is penalty
+    assert page.solves.solves[0].penalty is Penalty.OK
+
+    press_shortcut(qtbot, page, Qt.Key.Key_1)
+    assert page.solves.solves[-1].penalty is Penalty.OK
+
+
+@pytest.mark.parametrize("answer", [True, False])
+def test_cmd_z_deletes_last_solve_after_confirmation(
+    qtbot: QtBot,
+    page: TimerPage,
+    clock: FakeClock,
+    *,
+    answer: bool,
+) -> None:
+    """Cmd+Z asks first and only deletes when confirmed."""
+    questions: list[str] = []
+
+    def confirm(question: str) -> bool:
+        questions.append(question)
+        return answer
+
+    page.confirm = confirm
+    do_solve(qtbot, page, clock, 1_000)
+    do_solve(qtbot, page, clock, 2_000)
+    page.activateWindow()
+    qtbot.waitUntil(page.isActiveWindow)
+
+    press_shortcut(qtbot, page, Qt.Key.Key_Z)
+
+    assert questions == ["Delete the last solve (2.00)?"]
+    assert len(page.solves) == (1 if answer else 2)
+
+
+def test_shortcuts_without_solves_do_nothing(page: TimerPage) -> None:
+    """Penalty and delete shortcuts are harmless on an empty session."""
+    page.confirm = lambda _q: pytest.fail("should not ask")
+
+    page.set_last_penalty(Penalty.DNF)
+    page.delete_last()
+
+    assert len(page.solves) == 0
+
+
+@pytest.mark.parametrize(("result", "remaining"), [(SolveDialog.DELETED, 1), (0, 2)])
+def test_solve_dialog_result_is_applied(
+    qtbot: QtBot,
+    page: TimerPage,
+    clock: FakeClock,
+    result: int,
+    remaining: int,
+) -> None:
+    """Closing the dialog with Delete removes the solve; closing normally keeps it."""
+    do_solve(qtbot, page, clock, 1_000)
+    do_solve(qtbot, page, clock, 2_000)
+    shown: list[SolveDialog] = []
+
+    def run_dialog(dialog: QDialog) -> int:
+        assert isinstance(dialog, SolveDialog)
+        shown.append(dialog)
+        return result
+
+    page.run_dialog = run_dialog
+    page.show_solve(0)
+
+    assert shown[0].windowTitle() == "Solve #1"
+    assert len(page.solves) == remaining
+    assert page.solves_panel.model.rowCount() == remaining

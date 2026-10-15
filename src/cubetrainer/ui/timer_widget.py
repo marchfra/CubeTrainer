@@ -60,12 +60,14 @@ class TimerWidget(QWidget):
     regardless of which child widget has focus and space never activates a button.
 
     Attributes:
+        solve_started: Emitted when the timer starts running.
         solve_finished: Emitted with the solve time in milliseconds when a solve ends.
         machine: The underlying state machine.
         display: The label showing the time.
 
     """
 
+    solve_started = Signal()
     solve_finished = Signal(int)
 
     def __init__(
@@ -194,5 +196,7 @@ class TimerWidget(QWidget):
                 self.solve_finished.emit(result)
         else:
             self.machine.key_up(now, is_start_key=is_space)
+            if self.machine.state is TimerState.RUNNING:
+                self.solve_started.emit()
         self.refresh()
         return True
