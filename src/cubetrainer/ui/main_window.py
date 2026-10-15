@@ -3,7 +3,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QMainWindow, QTabWidget, QWidget
 
-from cubetrainer.ui.timer_widget import TimerWidget
+from cubetrainer.ui.timer_page import TimerPage
 
 #: Titles of the top-level tabs, in display order.
 TAB_TITLES: tuple[str, ...] = ("Timer", "Learn", "Stats")
@@ -29,7 +29,7 @@ class MainWindow(QMainWindow):
 
     Attributes:
         tabs: The tab widget holding the Timer, Learn and Stats pages.
-        timer: The timer shown in the Timer tab.
+        timer_page: The full-solve timer page shown in the Timer tab.
 
     """
 
@@ -40,8 +40,8 @@ class MainWindow(QMainWindow):
         self.resize(1100, 720)
 
         self.tabs: QTabWidget = QTabWidget()
-        self.timer: TimerWidget = TimerWidget()
-        self.tabs.addTab(self.timer, TAB_TITLES[0])
+        self.timer_page: TimerPage = TimerPage()
+        self.tabs.addTab(self.timer_page, TAB_TITLES[0])
         for title in TAB_TITLES[1:]:
             self.tabs.addTab(_placeholder(f"{title} — coming soon"), title)
         self.setCentralWidget(self.tabs)
