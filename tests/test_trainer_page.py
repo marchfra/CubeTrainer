@@ -481,3 +481,23 @@ def test_oll_trainer_recognises_and_hints(qtbot: QtBot, clock: FakeClock) -> Non
     assert trainer.hints_shown == 1
     do_solve(qtbot, trainer, clock, 2_000)
     assert trainer.solves.solves[-1].case_id is not None
+
+
+@pytest.mark.parametrize(("set_id", "count"), [("oll2", 10), ("pll2", 6)])
+def test_two_look_trainers(
+    qtbot: QtBot,
+    clock: FakeClock,
+    set_id: str,
+    count: int,
+) -> None:
+    """2-look trainers open, filter by look and record their cases."""
+    window = MainWindow(Database(":memory:"))
+    qtbot.addWidget(window)
+    window.show()
+    window.open_trainer(set_id)
+    trainer = window.trainer_pages[set_id]
+    trainer.timer._clock = clock
+
+    assert trainer.filter_button.text() == f"{count} cases · equal  ▾"
+    do_solve(qtbot, trainer, clock, 1_000)
+    assert trainer.solves.solves[-1].case_id is not None

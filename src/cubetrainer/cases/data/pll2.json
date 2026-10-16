@@ -1,0 +1,13 @@
+{
+  "id": "pll2",
+  "name": "2-Look PLL",
+  "kind": "cp",
+  "cases": [
+    {"id": "headlights", "name": "Headlights", "group": "Corners", "alg": "(R U R' U') (R' F R2 U') (R' U' R U) (R' F')"},
+    {"id": "diagonal", "name": "Diagonal", "group": "Corners", "alg": "F (R U' R' U') (R U R' F') (R U R' U') (R' F R F')"},
+    {"id": "ua", "name": "Ua", "group": "Edges", "kind": "ep", "alg": "M2 U M U2 M' U M2"},
+    {"id": "ub", "name": "Ub", "group": "Edges", "kind": "ep", "alg": "M2 U' M U2 M' U' M2"},
+    {"id": "h", "name": "H", "group": "Edges", "kind": "ep", "alg": "M2 U M2 U2 M2 U M2"},
+    {"id": "z", "name": "Z", "group": "Edges", "kind": "ep", "alg": "M' U M2 U M2 U M' U2 M2"}
+  ]
+}

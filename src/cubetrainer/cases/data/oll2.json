@@ -1,0 +1,17 @@
+{
+  "id": "oll2",
+  "name": "2-Look OLL",
+  "kind": "eo",
+  "cases": [
+    {"id": "dot", "name": "Dot", "group": "Edges", "alg": "F (R U R' U') F' f (R U R' U') f'"},
+    {"id": "l", "name": "L", "group": "Edges", "alg": "f (R U R' U') f'"},
+    {"id": "line", "name": "Line", "group": "Edges", "alg": "F (R U R' U') F'"},
+    {"id": "sune", "name": "Sune", "group": "Corners", "kind": "co", "alg": "(R U R' U) (R U2 R')"},
+    {"id": "antisune", "name": "Antisune", "group": "Corners", "kind": "co", "alg": "(R U2 R' U') (R U' R')"},
+    {"id": "h", "name": "H", "group": "Corners", "kind": "co", "alg": "(R U2 R') (U' R U R') (U' R U' R')"},
+    {"id": "pi", "name": "Pi", "group": "Corners", "kind": "co", "alg": "R U2 R2 U' R2 U' R2 U2 R"},
+    {"id": "headlights", "name": "Headlights", "group": "Corners", "kind": "co", "alg": "R2 D' (R U2 R') D (R U2 R)"},
+    {"id": "chameleon", "name": "Chameleon", "group": "Corners", "kind": "co", "alg": "(r U R' U') (r' F R F')"},
+    {"id": "bowtie", "name": "Bowtie", "group": "Corners", "kind": "co", "alg": "F' (r U R' U') (r' F R)"}
+  ]
+}

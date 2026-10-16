@@ -3,22 +3,24 @@
 A case scramble is built like a full random-state scramble: the target state (the
 case, with a random U turn before and after it) is solved with the two-phase solver
 and the solution is inverted. The scramble therefore doesn't reveal the algorithm.
-For OLL cases the pieces are also randomly permuted (a random PLL, with realistic
-odds), as they would be in a real solve.
+Whatever the case's algorithm doesn't solve is random, with real-solve odds, as it
+would be in a real solve: e.g. OLL cases come with a random PLL.
 
 The case of a scramble is never stored alongside it: it's recognised from the
 scramble itself, so the two can never disagree.
 """
 
 from collections.abc import Callable
+from fractions import Fraction
 
 import numpy as np
 
 from cubetrainer.cases.catalog import Case, CaseKind, CaseSet, load_case_set
 from cubetrainer.cases.filters import (
-    PLL_SKIP_WEIGHT,
+    LOOK_SPACE,
+    SKIP_LOOKS,
     TrainerPrefs,
-    case_weight,
+    case_probability,
     pick_case,
 )
 from cubetrainer.cases.recognition import case_key
@@ -47,6 +49,65 @@ def _u_turn(turns: int) -> list[Move]:
     return [Move("U", turns)] if turns else []
 
 
+#: What's left to solve after a case of each kind, in a real solve: e.g. after an
+#: OLL comes a PLL, after the edge look of 2-look OLL comes its corner look.
+REST_OF: dict[CaseKind, CaseKind | None] = {
+    CaseKind.OLL: CaseKind.PLL,
+    CaseKind.EO: CaseKind.CO,
+    CaseKind.CO: CaseKind.PLL,
+    CaseKind.CP: CaseKind.EP,
+    CaseKind.PLL: None,
+    CaseKind.EP: None,
+}
+
+
+def _cases_of(kind: CaseKind) -> list[Case]:
+    """Return every case of a kind that can be "the rest" of another case.
+
+    Args:
+        kind: PLL, CO or EP.
+
+    Returns:
+        The bundled cases of that kind.
+
+    Raises:
+        ValueError: For other kinds (they never come after another case).
+
+    """
+    sources = {CaseKind.PLL: "pll", CaseKind.CO: "oll2", CaseKind.EP: "pll2"}
+    if kind not in sources:
+        msg = f"no case comes after another as {kind}"
+        raise ValueError(msg)
+    return [c for c in load_case_set(sources[kind]).cases if c.kind is kind]
+
+
+def random_look(kind: CaseKind, rng: np.random.Generator) -> CubeState:
+    """Return a random last layer as it looks at a given step of a real solve.
+
+    The step's case (or its skip) is picked with real-solve odds, so every look is
+    equally likely; whatever later steps solve is random too.
+
+    Args:
+        kind: The step: PLL (U face solved), CO (edges oriented) or EP (corners
+            solved as well).
+        rng: Random number generator.
+
+    Returns:
+        A state with F2L solved.
+
+    """
+    cases = _cases_of(kind)
+    skip = Fraction(SKIP_LOOKS[kind], LOOK_SPACE[kind])
+    weights = np.array([*(float(case_probability(c)) for c in cases), float(skip)])
+    choice = int(rng.choice(len(weights), p=weights / weights.sum()))
+    if choice < len(cases):
+        return case_state(cases[choice], rng)
+    rest = REST_OF[kind]
+    if rest is not None:
+        return random_look(rest, rng)
+    return SOLVED.apply(_u_turn(int(rng.integers(4))))
+
+
 def random_pll_state(rng: np.random.Generator) -> CubeState:
     """Return a random last-layer permutation with the U face solved.
 
@@ -60,39 +121,32 @@ def random_pll_state(rng: np.random.Generator) -> CubeState:
         A state with F2L and OLL solved.
 
     """
-    plls = load_case_set("pll").cases
-    weights = np.array([*(case_weight(c) for c in plls), PLL_SKIP_WEIGHT], dtype=float)
-    choice = int(rng.choice(len(weights), p=weights / weights.sum()))
-    pre, post = (int(turns) for turns in rng.integers(0, 4, size=2))
-    if choice == len(plls):  # the skip: just a U turn
-        return SOLVED.apply(_u_turn(pre))
-    return state_solved_by(
-        parse_alg(plls[choice].alg),
-        before=_u_turn(pre),
-        after=_u_turn(post),
-    )
+    return random_look(CaseKind.PLL, rng)
 
 
 def case_state(case: Case, rng: np.random.Generator) -> CubeState:
     """Return a random state showing ``case``, with random U turns around it.
+
+    What the case's algorithm doesn't solve is random, as in a real solve: e.g. an
+    OLL case comes with a random permutation, the edge look of 2-look OLL with
+    random corners.
 
     Args:
         case: The case to set up.
         rng: Random number generator.
 
     Returns:
-        The state (for OLL cases, with the pieces randomly permuted).
+        The state.
 
     """
     pre, post = (int(turns) for turns in rng.integers(0, 4, size=2))
     alg = parse_alg(case.alg)
-    if case.kind is CaseKind.OLL:
-        # A random PLL first, then the OLL case: solving it takes the OLL algorithm
-        # and then some PLL, as in a real solve.
-        return random_pll_state(rng).followed_by(
-            state_solved_by(alg, before=_u_turn(pre)),
-        )
-    return state_solved_by(alg, before=_u_turn(pre), after=_u_turn(post))
+    rest = REST_OF[case.kind]
+    if rest is None:
+        return state_solved_by(alg, before=_u_turn(pre), after=_u_turn(post))
+    # The rest first, then the case: solving it takes the case's algorithm, then
+    # whatever the rest needs.
+    return random_look(rest, rng).followed_by(state_solved_by(alg, before=_u_turn(pre)))
 
 
 def case_scramble(case: Case, rng: np.random.Generator) -> str:
@@ -115,18 +169,20 @@ class CaseRecognizer:
     """Finds which case of a set a scramble produces."""
 
     def __init__(self, case_set: CaseSet) -> None:
-        """Index the set's cases by their AUF-independent key.
+        """Index the set's cases by their kind and AUF-independent key.
 
         Args:
-            case_set: The cases to recognise.
+            case_set: The cases to recognise (2-look sets mix two kinds).
 
         """
-        self._kind: CaseKind = case_set.kind
-        self._by_key: dict[str, Case] = {}
+        self._kinds: list[CaseKind] = list(
+            dict.fromkeys(c.kind for c in case_set.cases),
+        )
+        self._by_key: dict[tuple[CaseKind, str], Case] = {}
         for case in case_set.cases:
-            key = case_key(case_set.kind, case.state())
+            key = case_key(case.kind, case.state())
             assert key is not None  # noqa: S101 - every bundled case is valid
-            self._by_key[key] = case
+            self._by_key[case.kind, key] = case
 
     def recognize(self, scramble: str) -> Case | None:
         """Return the case a scramble leaves on a solved cube.
@@ -138,8 +194,12 @@ class CaseRecognizer:
             The case, or None if the scramble doesn't produce one of the set's cases.
 
         """
-        key = case_key(self._kind, SOLVED.apply(parse_alg(scramble)))
-        return None if key is None else self._by_key.get(key)
+        state = SOLVED.apply(parse_alg(scramble))
+        for kind in self._kinds:
+            key = case_key(kind, state)
+            if key is not None and (kind, key) in self._by_key:
+                return self._by_key[kind, key]
+        return None
 
 
 def active_cases(case_set: CaseSet, prefs: TrainerPrefs) -> tuple[list[Case], bool]:

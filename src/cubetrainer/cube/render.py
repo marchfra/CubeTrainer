@@ -179,7 +179,20 @@ def _stationary_blocks(moves: dict[_Cell, _Cell]) -> int:
     )
 
 
-def piece_arrows(state: CubeState) -> list[Arrow]:
+def _is_corner(cell: _Cell) -> bool:
+    """Tell whether a top-layer cell holds a corner.
+
+    Args:
+        cell: (column, row) of the cell.
+
+    Returns:
+        True for the four corner cells.
+
+    """
+    return cell[0] != 1 and cell[1] != 1
+
+
+def piece_arrows(state: CubeState, *, corners_only: bool = False) -> list[Arrow]:
     """Compute where each top-layer piece goes when the state is solved.
 
     Many algorithms finish with the top layer a turn away from solved (a final AUF).
@@ -190,12 +203,16 @@ def piece_arrows(state: CubeState) -> list[Arrow]:
 
     Args:
         state: A state whose bottom two layers are solved.
+        corners_only: Ignore the edges (for corner-permutation cases), both when
+            drawing and when choosing the final U turn.
 
     Returns:
         One arrow per moving piece, with swaps merged into a single two-headed arrow.
 
     """
     options = [_piece_moves(state, auf) for auf in range(4)]
+    if corners_only:
+        options = [{a: b for a, b in m.items() if _is_corner(a)} for m in options]
     best = min(
         options,
         key=lambda m: (len(m), _longest_cycle(m), -_stationary_blocks(m)),
@@ -284,21 +301,37 @@ def _draw_arrow(painter: QPainter, arrow: Arrow) -> None:
         _arrow_head(painter, reverse.p2(), reverse)
 
 
+@dataclass(frozen=True, slots=True)
+class RenderStyle:
+    """What a last-layer image shows.
+
+    Attributes:
+        arrows: Draw arrows showing how the pieces move.
+        orientation_only: Show only which stickers have the U colour (in yellow),
+            the rest grey, as for OLL cases.
+        hide_corners: Draw the corners grey, as for edge-orientation cases.
+        hide_edges: Draw the edges grey and leave them out of the arrows, as for
+            corner-permutation cases.
+
+    """
+
+    arrows: bool = True
+    orientation_only: bool = False
+    hide_corners: bool = False
+    hide_edges: bool = False
+
+
 def render_last_layer(
     state: CubeState,
     size: int,
-    *,
-    arrows: bool = True,
-    orientation_only: bool = False,
+    style: RenderStyle = RenderStyle(),  # noqa: B008 - immutable default
 ) -> QImage:
     """Render the top-down view of a state's last layer.
 
     Args:
         state: The cube state, in standard orientation.
         size: Width and height of the image in pixels.
-        arrows: Whether to draw arrows showing how the pieces move.
-        orientation_only: Draw only which stickers show the U colour (in yellow),
-            the rest grey, as for OLL cases.
+        style: What to show; colours and arrows by default.
 
     Returns:
         A square image with a transparent background.
@@ -317,13 +350,15 @@ def render_last_layer(
         if position[1] != 1 or normal[1] == -1:
             continue
         face = facelets[index]
-        if orientation_only and face != "U":
+        corner = position[0] != 0 and position[2] != 0
+        hidden = (style.hide_corners and corner) or (style.hide_edges and not corner)
+        if hidden or (style.orientation_only and face != "U"):
             painter.setBrush(QColor(IGNORED_COLOR))
         else:
             painter.setBrush(QColor(COLOR_SCHEME[face]))
         painter.drawRoundedRect(_sticker_rect(position, normal), 0.08, 0.08)
 
-    if arrows:
+    if style.arrows:
         painter.setPen(
             QPen(
                 QColor(INK_COLOR),
@@ -333,7 +368,7 @@ def render_last_layer(
             ),
         )
         painter.setBrush(QColor(INK_COLOR))
-        for arrow in piece_arrows(state):
+        for arrow in piece_arrows(state, corners_only=style.hide_edges):
             _draw_arrow(painter, arrow)
     painter.end()
     return image

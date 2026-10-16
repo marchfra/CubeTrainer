@@ -30,12 +30,20 @@ class CaseStatus(Enum):
 
 
 class CaseKind(StrEnum):
-    """What a set's cases are about, which decides how they're told apart and drawn."""
+    """What a case is about, which decides how cases are told apart and drawn."""
 
     OLL = "oll"
     """Orienting the last layer: cases differ by which stickers face up."""
     PLL = "pll"
     """Permuting the last layer: cases differ by where the pieces go."""
+    EO = "eo"
+    """2-look OLL, first look: orienting the edges; the corners can be anything."""
+    CO = "co"
+    """2-look OLL, second look: orienting the corners, with the edges oriented."""
+    CP = "cp"
+    """2-look PLL, first look: permuting the corners; the edges can be anything."""
+    EP = "ep"
+    """2-look PLL, second look: permuting the edges, with the corners solved."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +55,7 @@ class Case:
         name: Display name.
         group: Group the case belongs to (e.g. ``"Edges Only"``).
         alg: Default algorithm that solves the case.
-        kind: Whether it's an OLL or a PLL case.
+        kind: What the case is about (OLL, PLL, or one look of a 2-look method).
 
     """
 
@@ -74,7 +82,7 @@ class CaseSet:
     Attributes:
         id: Identifier (e.g. ``"pll"``), also used as the data file name.
         name: Display name.
-        kind: Whether the set's cases are OLL or PLL cases.
+        kind: The kind of most of the set's cases (cases may override it).
         cases: The cases.
 
     """
@@ -94,6 +102,9 @@ class CaseSet:
 def load_case_set(set_id: str) -> CaseSet:
     """Load a bundled case set from ``cases/data/<set_id>.json``.
 
+    The file gives the set's kind; a case may override it with its own ``"kind"``
+    (2-look sets mix two kinds).
+
     Args:
         set_id: The set identifier, e.g. ``"pll"``.
 
@@ -105,7 +116,13 @@ def load_case_set(set_id: str) -> CaseSet:
     data = json.loads(text)
     kind = CaseKind(data["kind"])
     cases = tuple(
-        Case(id=c["id"], name=c["name"], group=c["group"], alg=c["alg"], kind=kind)
+        Case(
+            id=c["id"],
+            name=c["name"],
+            group=c["group"],
+            alg=c["alg"],
+            kind=CaseKind(c.get("kind", kind)),
+        )
         for c in data["cases"]
     )
     return CaseSet(id=data["id"], name=data["name"], kind=kind, cases=cases)

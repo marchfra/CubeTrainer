@@ -66,10 +66,25 @@ def pll_key(state: CubeState) -> str:
     if not is_oll_solved(state):
         msg = "pll_key needs a state with F2L and OLL solved"
         raise ValueError(msg)
+    return _permutation_key(state, _TOP_SIDE_STICKERS)
+
+
+def _permutation_key(state: CubeState, stickers: tuple[int, ...]) -> str:
+    """Return the smallest colour pattern of some side stickers over all AUFs.
+
+    Args:
+        state: A cube state with OLL solved.
+        stickers: Facelet indices of the top-layer side stickers to look at.
+
+    Returns:
+        The smallest pattern over the four pre-AUFs (turning the U layer) and the
+        four post-AUFs (cyclically relabelling the side colours).
+
+    """
     candidates: list[str] = []
     for pre in range(4):
         turned = state.apply([Move("U", pre)]) if pre else state
-        pattern = "".join(turned.facelets()[i] for i in _TOP_SIDE_STICKERS)
+        pattern = "".join(turned.facelets()[i] for i in stickers)
         for post in range(4):
             relabel = {
                 face: _SIDE_CYCLE[(_SIDE_CYCLE.index(face) + post) % 4]
@@ -77,6 +92,99 @@ def pll_key(state: CubeState) -> str:
             }
             candidates.append("".join(relabel[c] for c in pattern))
     return min(candidates)
+
+
+#: Facelet indices of the 8 side stickers of the top-layer corners.
+TOP_CORNER_SIDE_STICKERS: tuple[int, ...] = tuple(
+    i for i in _TOP_SIDE_STICKERS if STICKERS[i][0][0] != 0 and STICKERS[i][0][2] != 0
+)
+
+#: Facelet indices of the U-face stickers of the four top-layer edges.
+_U_FACE_EDGES: tuple[int, ...] = (1, 3, 5, 7)
+
+
+def cp_key(state: CubeState) -> str:
+    """Return a key identifying a corner permutation regardless of AUFs.
+
+    Only the corners are looked at, as in the first look of 2-look PLL.
+
+    Args:
+        state: A cube state with OLL solved, in standard orientation.
+
+    Returns:
+        An 8-character key.
+
+    Raises:
+        ValueError: If the state is not a PLL (the F2L or the U face isn't solved).
+
+    """
+    if not is_oll_solved(state):
+        msg = "cp_key needs a state with F2L and OLL solved"
+        raise ValueError(msg)
+    return _permutation_key(state, TOP_CORNER_SIDE_STICKERS)
+
+
+def corner_pattern(state: CubeState) -> str:
+    """Return the colours of the top corners' side stickers (no AUF folded in).
+
+    Args:
+        state: A cube state.
+
+    Returns:
+        An 8-character string.
+
+    """
+    facelets = state.facelets()
+    return "".join(facelets[i] for i in TOP_CORNER_SIDE_STICKERS)
+
+
+def eo_pattern(state: CubeState) -> str:
+    """Return which top edges show the U colour on top, as four 0s and 1s.
+
+    Args:
+        state: A cube state.
+
+    Returns:
+        A 4-character string (UB, UL, UR, UF).
+
+    """
+    facelets = state.facelets()
+    return "".join("1" if facelets[i] == "U" else "0" for i in _U_FACE_EDGES)
+
+
+def edges_oriented(state: CubeState) -> bool:
+    """Check that every top edge shows the U colour on top.
+
+    Args:
+        state: A cube state.
+
+    Returns:
+        True if the four top edges are oriented.
+
+    """
+    return eo_pattern(state) == "1111"
+
+
+def eo_key(state: CubeState) -> str:
+    """Return a key identifying an edge-orientation case regardless of the pre-AUF.
+
+    Args:
+        state: A cube state with F2L solved, in standard orientation.
+
+    Returns:
+        The smallest edge pattern over the four turns of the U layer.
+
+    Raises:
+        ValueError: If F2L isn't solved.
+
+    """
+    if not is_f2l_solved(state):
+        msg = "eo_key needs a state with F2L solved"
+        raise ValueError(msg)
+    return min(
+        eo_pattern(state.apply([Move("U", turns)]) if turns else state)
+        for turns in range(4)
+    )
 
 
 #: Facelet indices of all 21 top-layer stickers (U face and the sides' top rows).
@@ -124,17 +232,27 @@ def oll_key(state: CubeState) -> str:
 
 
 def case_key(kind: CaseKind, state: CubeState) -> str | None:
-    """Identify the case a state shows, for sets of the given kind.
+    """Identify the case a state shows, for cases of the given kind.
 
     Args:
-        kind: OLL or PLL.
+        kind: The kind of case to look for.
         state: A cube state in standard orientation.
 
     Returns:
-        The case key (``oll_key`` or ``pll_key``), or None if the state isn't a case
-        of that kind (F2L broken, or for PLL, the U face not solved).
+        The case key, or None if the state can't be a case of that kind: F2L
+        broken; the U face unsolved for PLL, CP and EP; the edges unoriented for CO.
 
     """
-    if kind is CaseKind.PLL:
-        return pll_key(state) if is_oll_solved(state) else None
-    return oll_key(state) if is_f2l_solved(state) else None
+    if not is_f2l_solved(state):
+        return None
+    match kind:
+        case CaseKind.OLL:
+            return oll_key(state)
+        case CaseKind.EO:
+            return eo_key(state)
+        case CaseKind.CO:
+            return oll_key(state) if edges_oriented(state) else None
+        case CaseKind.PLL | CaseKind.EP:
+            return pll_key(state) if is_oll_solved(state) else None
+        case CaseKind.CP:
+            return cp_key(state) if is_oll_solved(state) else None

@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from fractions import Fraction
 from functools import cache
 from typing import Protocol
 
 import numpy as np
 
 from cubetrainer.cases.catalog import Case, CaseKind, CaseSet, CaseStatus
-from cubetrainer.cases.recognition import oll_pattern
+from cubetrainer.cases.recognition import corner_pattern, eo_pattern, oll_pattern
 from cubetrainer.cube.model import Move, parse_alg, state_solved_by
 
 
@@ -166,36 +167,54 @@ class MemoryTrainerPrefs:
         self.case_filter = case_filter
 
 
-#: Number of distinct states of the PLL skip (solved up to a U turn).
-PLL_SKIP_WEIGHT: int = 4
+#: Number of distinct looks the last layer can have, for each kind of case. A case's
+#: probability is its number of looks divided by this; what's left is the skip.
+LOOK_SPACE: dict[CaseKind, int] = {
+    CaseKind.PLL: 288,  # 72 permutations x 4 U turns
+    CaseKind.OLL: 216,  # 27 corner x 8 edge orientations
+    CaseKind.EO: 8,  # 2^3 edge orientations
+    CaseKind.CO: 27,  # 3^3 corner orientations
+    CaseKind.CP: 24,  # 4! corner permutations
+    CaseKind.EP: 48,  # 12 even edge permutations x 4 U turns
+}
+
+#: Number of looks of each kind's skip (already solved, up to a U turn).
+SKIP_LOOKS: dict[CaseKind, int] = {
+    CaseKind.PLL: 4,
+    CaseKind.OLL: 1,
+    CaseKind.EO: 1,
+    CaseKind.CO: 1,
+    CaseKind.CP: 4,
+    CaseKind.EP: 4,
+}
 
 
-def case_weight(case: Case) -> int:
-    """Return how many distinct looks a case has, over all its U turns.
+def case_probability(case: Case) -> Fraction:
+    """Return how often a case comes up in real solves, at its step of the method.
 
-    A uniformly random cube shows each look equally often, so a case's natural
-    frequency is proportional to this number. For PLL a look is a whole last-layer
-    state, over U turns before and after (16 for most cases, 8 for E and Z, 4 for H,
-    Na and Nb). For OLL it's an orientation pattern, over U turns before (4 for most
-    cases, 2 or 1 for symmetric ones).
+    A uniformly random cube shows each look of the last layer equally often, so the
+    probability is the number of distinct looks the case has, over all its U turns,
+    divided by the number of looks there are. For PLL a look is the whole last
+    layer; for OLL and CO the orientation pattern; for EO just the edges; for CP
+    just the corners. E.g. most PLLs are 1/18 and H is 1/72; most OLLs are 1/54.
 
     Args:
         case: The case.
 
     Returns:
-        The number of distinct looks.
+        The probability (the cases of a kind plus its skip add up to 1).
 
     """
-    return _case_weight(case.alg, case.kind)
+    return Fraction(_case_looks(case.alg, case.kind), LOOK_SPACE[case.kind])
 
 
 @cache
-def _case_weight(alg: str, kind: CaseKind) -> int:
-    """Compute ``case_weight`` (cached by algorithm and kind).
+def _case_looks(alg: str, kind: CaseKind) -> int:
+    """Count a case's distinct looks over its U turns (cached by algorithm and kind).
 
     Args:
         alg: The case's algorithm.
-        kind: OLL or PLL.
+        kind: The kind of case.
 
     Returns:
         The number of distinct looks.
@@ -203,10 +222,23 @@ def _case_weight(alg: str, kind: CaseKind) -> int:
     """
     moves = parse_alg(alg)
     aufs: list[list[Move]] = [[], *([Move("U", turns)] for turns in (1, 2, 3))]
-    if kind is CaseKind.OLL:
-        return len({oll_pattern(state_solved_by(moves, before=b)) for b in aufs})
-    states = {state_solved_by(moves, before=b, after=a) for b in aufs for a in aufs}
-    return len(states)
+    match kind:
+        case CaseKind.OLL | CaseKind.CO:
+            return len({oll_pattern(state_solved_by(moves, before=b)) for b in aufs})
+        case CaseKind.EO:
+            return len({eo_pattern(state_solved_by(moves, before=b)) for b in aufs})
+        case CaseKind.CP:
+            return len(
+                {
+                    corner_pattern(state_solved_by(moves, before=b, after=a))
+                    for b in aufs
+                    for a in aufs
+                },
+            )
+        case CaseKind.PLL | CaseKind.EP:
+            return len(
+                {state_solved_by(moves, before=b, after=a) for b in aufs for a in aufs},
+            )
 
 
 def pick_case(cases: list[Case], rng: np.random.Generator, *, realistic: bool) -> Case:
@@ -215,7 +247,8 @@ def pick_case(cases: list[Case], rng: np.random.Generator, *, realistic: bool) -
     Args:
         cases: The candidate cases (not empty).
         rng: Random number generator.
-        realistic: Weight cases by their natural frequency instead of equally.
+        realistic: Weight cases by their real-solve probability instead of equally;
+            in 2-look sets each look is weighted within its own step.
 
     Returns:
         The chosen case.
@@ -223,5 +256,5 @@ def pick_case(cases: list[Case], rng: np.random.Generator, *, realistic: bool) -
     """
     if not realistic:
         return cases[int(rng.integers(len(cases)))]
-    weights = np.array([case_weight(case) for case in cases], dtype=float)
+    weights = np.array([float(case_probability(case)) for case in cases])
     return cases[int(rng.choice(len(cases), p=weights / weights.sum()))]

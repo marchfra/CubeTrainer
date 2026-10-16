@@ -33,7 +33,12 @@ def test_lists_all_pll_cases(qtbot: QtBot) -> None:
     page = make_page(qtbot, Database(":memory:"))
 
     assert page.set_picker.text() == "PLL  ▾"
-    assert [a.text() for a in page.set_menu.actions()] == ["OLL", "PLL"]
+    assert [a.text() for a in page.set_menu.actions()] == [
+        "2-Look OLL",
+        "2-Look PLL",
+        "OLL",
+        "PLL",
+    ]
     assert len(page.case_list.images) == 21
     assert set(page.case_list.statuses.values()) == {CaseStatus.UNLEARNED}
 
@@ -112,7 +117,7 @@ def test_selecting_a_set_relabels_buttons(qtbot: QtBot) -> None:
     """Choosing a set from the menu updates the picker and the Train button."""
     page = make_page(qtbot, Database(":memory:"))
 
-    page.set_menu.actions()[0].trigger()
+    page.set_menu.actions()[2].trigger()
 
     assert page.set_picker.text() == "OLL  ▾"
     assert page.train_button.text() == "Train OLL"

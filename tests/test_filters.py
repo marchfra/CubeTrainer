@@ -8,10 +8,9 @@ import pytest
 
 from cubetrainer.cases.catalog import CaseStatus, load_case_set
 from cubetrainer.cases.filters import (
-    PLL_SKIP_WEIGHT,
     CaseFilter,
     MemoryTrainerPrefs,
-    case_weight,
+    case_probability,
     pick_case,
 )
 from cubetrainer.cases.trainer import (
@@ -85,27 +84,63 @@ def test_json_round_trip(case_filter: CaseFilter) -> None:
     assert CaseFilter.from_json(case_filter.to_json()) == case_filter
 
 
-def test_case_weights_give_the_known_pll_frequencies() -> None:
-    """Weights are proportional to how often each PLL comes up (skip has 4 states)."""
-    weights = {case.id: case_weight(case) for case in PLL.cases}
-    total = sum(weights.values()) + PLL_SKIP_WEIGHT
+def test_pll_probabilities_are_the_known_ones() -> None:
+    """Each PLL comes up as often as in real solves; with the skip they add to 1."""
+    probabilities = {case.id: case_probability(case) for case in PLL.cases}
 
-    assert total == 288
-    assert {cid: Fraction(w, total) for cid, w in weights.items()} == PLL_FREQUENCY
+    assert probabilities == PLL_FREQUENCY
+    assert sum(probabilities.values()) + Fraction(1, 72) == 1
 
 
-def test_case_weights_give_the_known_oll_frequencies() -> None:
+def test_oll_probabilities_are_the_known_ones() -> None:
     """OLL 20 is 1/216; 1, 21, 55, 56 and 57 are 1/108; the rest 1/54."""
-    weights = {case.id: case_weight(case) for case in load_case_set("oll").cases}
-    total = sum(weights.values()) + 1  # the OLL skip: one pattern
+    probabilities = {
+        case.id: case_probability(case) for case in load_case_set("oll").cases
+    }
 
-    assert total == 216
     rare = {"20": Fraction(1, 216)} | dict.fromkeys(
         ["1", "21", "55", "56", "57"],
         Fraction(1, 108),
     )
-    expected = {cid: rare.get(cid, Fraction(1, 54)) for cid in weights}
-    assert {cid: Fraction(w, total) for cid, w in weights.items()} == expected
+    assert probabilities == {
+        cid: rare.get(cid, Fraction(1, 54)) for cid in probabilities
+    }
+    assert sum(probabilities.values()) + Fraction(1, 216) == 1
+
+
+@pytest.mark.parametrize(
+    ("set_id", "expected"),
+    [
+        (
+            "oll2",
+            {"dot": Fraction(1, 8), "l": Fraction(1, 2), "line": Fraction(1, 4)}
+            | dict.fromkeys(
+                ["sune", "antisune", "pi", "headlights", "chameleon", "bowtie"],
+                Fraction(4, 27),
+            )
+            | {"h": Fraction(2, 27)},
+        ),
+        (
+            "pll2",
+            {
+                "headlights": Fraction(2, 3),
+                "diagonal": Fraction(1, 6),
+                "ua": Fraction(1, 3),
+                "ub": Fraction(1, 3),
+                "z": Fraction(1, 6),
+                "h": Fraction(1, 12),
+            },
+        ),
+    ],
+)
+def test_two_look_probabilities_are_per_look(
+    set_id: str,
+    expected: dict[str, Fraction],
+) -> None:
+    """In 2-look sets each case's odds are within its own look."""
+    probabilities = {c.id: case_probability(c) for c in load_case_set(set_id).cases}
+
+    assert probabilities == expected
 
 
 def test_realistic_picks_follow_the_weights() -> None:

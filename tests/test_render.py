@@ -9,6 +9,7 @@ from cubetrainer.cube.render import (
     COLOR_SCHEME,
     IGNORED_COLOR,
     Arrow,
+    RenderStyle,
     piece_arrows,
     render_last_layer,
 )
@@ -100,7 +101,9 @@ def test_arrows_are_drawn_on_request() -> None:
     point = (size // 2, size // 2)
 
     with_arrows = render_last_layer(state, size).pixelColor(*point)
-    without = render_last_layer(state, size, arrows=False).pixelColor(*point)
+    without = render_last_layer(state, size, RenderStyle(arrows=False)).pixelColor(
+        *point,
+    )
 
     assert with_arrows.lightness() < 60
     assert without.name() == QColor(COLOR_SCHEME["U"]).name()
@@ -170,7 +173,11 @@ def test_orientation_only_shows_yellow_and_grey() -> None:
     """OLL images: U-coloured stickers yellow, the others grey, no arrows."""
     sune = next(c for c in load_case_set("oll").cases if c.id == "27")
     size = 195
-    image = render_last_layer(sune.state(), size, arrows=False, orientation_only=True)
+    image = render_last_layer(
+        sune.state(),
+        size,
+        RenderStyle(arrows=False, orientation_only=True),
+    )
 
     colours = {
         image.pixelColor(x, y).name()
@@ -181,3 +188,36 @@ def test_orientation_only_shows_yellow_and_grey() -> None:
     assert QColor(COLOR_SCHEME["U"]).name() in colours
     assert QColor(IGNORED_COLOR).name() in colours
     assert QColor(COLOR_SCHEME["F"]).name() not in colours
+
+
+@pytest.mark.parametrize(
+    ("hide_corners", "hide_edges", "corner_grey", "edge_grey"),
+    [(True, False, True, False), (False, True, False, True)],
+)
+def test_hiding_corners_or_edges(
+    *,
+    hide_corners: bool,
+    hide_edges: bool,
+    corner_grey: bool,
+    edge_grey: bool,
+) -> None:
+    """Hidden pieces are drawn grey, including their U-face sticker."""
+    size = 195  # 50 px per U-face cell; the U face starts at 0.45 cells
+    image = render_last_layer(
+        SOLVED,
+        size,
+        RenderStyle(hide_corners=hide_corners, hide_edges=hide_edges),
+    )
+    grey = QColor(IGNORED_COLOR).name()
+    corner_pixel = image.pixelColor(int(size * 1.0 / 3.9), int(size * 1.0 / 3.9)).name()
+    edge_pixel = image.pixelColor(size // 2, int(size * 1.0 / 3.9)).name()
+
+    assert (corner_pixel == grey) == corner_grey
+    assert (edge_pixel == grey) == edge_grey
+
+
+def test_corner_only_arrows_ignore_edges() -> None:
+    """A T perm with edges ignored shows just the corner swap."""
+    arrows = piece_arrows(state_solved_by(parse_alg(T_PERM)), corners_only=True)
+
+    assert arrows == [Arrow(start=(2, 0), end=(2, 2), both_ways=True)]
