@@ -93,7 +93,16 @@ and averages and means are rounded to the nearest hundredth.
 - The same shortcuts work (⌘1/⌘2/⌘3, ⌘Z). Inspection is off by default; the
   trainer has its own *Options ▾* toggle, separate from the full timer's.
 
-**Stats** tab: coming soon.
+**Stats tab**
+
+- Choose a *Source* (the full timer or a set's trainer), a *Session* (one, or all)
+  and, for trainers, a *Case* (one, or all). Trainer statistics leave out
+  mistakes.
+- **Overview:** solves, DNFs, best, worst, mean, median, standard deviation,
+  variation (CV: std / mean, lower is more consistent), 10th and 90th percentile.
+- **Averages:** current and best ao5, ao12, ao50 and ao100.
+- **Sub-X:** the share of solves under a time you choose.
+- Plots: coming next.
 
 ## Requirements
 

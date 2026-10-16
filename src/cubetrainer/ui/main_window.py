@@ -1,13 +1,6 @@
 """Main application window with the Timer, Learn and Stats tabs."""
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QLabel,
-    QMainWindow,
-    QStackedWidget,
-    QTabWidget,
-    QWidget,
-)
+from PySide6.QtWidgets import QMainWindow, QStackedWidget, QTabWidget
 
 from cubetrainer.cases.catalog import load_case_set
 from cubetrainer.db import (
@@ -18,26 +11,12 @@ from cubetrainer.db import (
     trainer_session_kind,
 )
 from cubetrainer.ui.learn_page import LearnPage
+from cubetrainer.ui.stats_page import StatsPage
 from cubetrainer.ui.timer_page import TimerPage
 from cubetrainer.ui.trainer_page import TrainerPage
 
 #: Titles of the top-level tabs, in display order.
 TAB_TITLES: tuple[str, ...] = ("Timer", "Learn", "Stats")
-
-
-def _placeholder(text: str) -> QWidget:
-    """Build a centred label used for tabs that are not implemented yet.
-
-    Args:
-        text: Message shown in the middle of the tab.
-
-    Returns:
-        The placeholder widget.
-
-    """
-    label = QLabel(text)
-    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    return label
 
 
 class MainWindow(QMainWindow):
@@ -49,11 +28,12 @@ class MainWindow(QMainWindow):
         timer_page: The full-solve timer page.
         trainer_pages: Trainer pages created so far, keyed by set id.
         learn_page: The case list shown in the Learn tab.
+        stats_page: The statistics shown in the Stats tab.
 
     """
 
     def __init__(self, db: Database) -> None:
-        """Create the window and its tabs (Stats is a placeholder for now).
+        """Create the window and its tabs.
 
         Args:
             db: The app database.
@@ -76,7 +56,8 @@ class MainWindow(QMainWindow):
         self.learn_page: LearnPage = LearnPage(db)
         self.learn_page.train_requested.connect(self.open_trainer)
         self.tabs.addTab(self.learn_page, TAB_TITLES[1])
-        self.tabs.addTab(_placeholder(f"{TAB_TITLES[2]} — coming soon"), TAB_TITLES[2])
+        self.stats_page: StatsPage = StatsPage(db)
+        self.tabs.addTab(self.stats_page, TAB_TITLES[2])
         self.setCentralWidget(self.tabs)
 
     def open_trainer(self, set_id: str) -> None:

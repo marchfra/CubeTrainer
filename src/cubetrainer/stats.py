@@ -9,6 +9,8 @@ import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+import numpy as np
+
 from cubetrainer.solves import Solve
 
 
@@ -201,3 +203,90 @@ def case_stats(solves: Iterable[Solve]) -> dict[str, CaseStats]:
             hinted=sum(s.hints > 0 for s in case_solves),
         )
     return result
+
+
+#: Averages listed on the Stats page.
+SUMMARY_AVERAGES: tuple[int, ...] = (5, 12, 50, 100)
+
+
+@dataclass(frozen=True, slots=True)
+class Summary:
+    """Statistics of a list of results (milliseconds, ``math.inf`` for DNF).
+
+    Times are None when there's nothing to compute them from.
+
+    Attributes:
+        count: Number of results.
+        dnfs: Number of DNFs.
+        best: Fastest finished result.
+        worst: Slowest finished result.
+        mean: Mean of the finished results.
+        median: Median of the finished results.
+        std: Sample standard deviation of the finished results.
+        percentiles: 10th, 50th and 90th percentile of the finished results.
+        averages: Current and best average of n, for each n in ``SUMMARY_AVERAGES``.
+
+    """
+
+    count: int
+    dnfs: int
+    best: float | None
+    worst: float | None
+    mean: float | None
+    median: float | None
+    std: float | None
+    percentiles: dict[int, float | None]
+    averages: dict[int, tuple[float | None, float | None]]
+
+    @property
+    def cv(self) -> float | None:
+        """Coefficient of variation (std / mean): how consistent the times are."""
+        if self.std is None or not self.mean:
+            return None
+        return self.std / self.mean
+
+
+def summarize(values: Sequence[float]) -> Summary:
+    """Compute the Stats page's summary of some results.
+
+    Args:
+        values: Results, oldest first (``math.inf`` for DNF).
+
+    Returns:
+        The summary.
+
+    """
+    finished = np.array([v for v in values if math.isfinite(v)], dtype=float)
+    some = finished.size > 0
+    return Summary(
+        count=len(values),
+        dnfs=len(values) - int(finished.size),
+        best=float(finished.min()) if some else None,
+        worst=float(finished.max()) if some else None,
+        mean=float(finished.mean()) if some else None,
+        median=float(np.median(finished)) if some else None,
+        std=float(finished.std(ddof=1)) if finished.size > 1 else None,
+        percentiles={
+            p: float(np.percentile(finished, p)) if some else None for p in (10, 50, 90)
+        },
+        averages={
+            n: (current_average(values, n), best_average(values, n))
+            for n in SUMMARY_AVERAGES
+        },
+    )
+
+
+def sub_x_rate(values: Sequence[float], limit_ms: float) -> float | None:
+    """Return the share of results under a time (DNFs count as not under it).
+
+    Args:
+        values: Results (``math.inf`` for DNF).
+        limit_ms: The time to beat, in milliseconds.
+
+    Returns:
+        The fraction of results strictly under ``limit_ms``, or None if empty.
+
+    """
+    if not values:
+        return None
+    return sum(v < limit_ms for v in values) / len(values)

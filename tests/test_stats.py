@@ -144,3 +144,39 @@ def test_case_stats_with_only_mistakes() -> None:
 
     assert (by_case["T"].best, by_case["T"].mean) == (None, None)
     assert by_case["T"].mistake_rate == 1.0
+
+
+def test_summarize_hand_computed() -> None:
+    """Counts, extremes, centre, spread and percentiles of a small set."""
+    values = [10_000.0, 12_000.0, DNF, 14_000.0, 16_000.0, 18_000.0]
+
+    summary = stats.summarize(values)
+
+    assert (summary.count, summary.dnfs) == (6, 1)
+    assert (summary.best, summary.worst) == (10_000, 18_000)
+    assert (summary.mean, summary.median) == (14_000, 14_000)
+    assert summary.std == pytest.approx(3_162.28, abs=0.01)  # sample std of 10..18
+    assert summary.cv == pytest.approx(3_162.28 / 14_000, abs=1e-4)
+    assert summary.percentiles[10] == pytest.approx(10_800)  # numpy's linear method
+    assert summary.percentiles[90] == pytest.approx(17_200)
+    assert summary.averages[5] == (16_000, 14_000)  # last 5 / best of the two ao5s
+    assert summary.averages[12] == (None, None)
+
+
+def test_summarize_empty_and_all_dnf() -> None:
+    """Nothing to compute gives None everywhere, never an error."""
+    for values in ([], [DNF, DNF]):
+        summary = stats.summarize(values)
+        assert summary.best is None
+        assert summary.std is None
+        assert summary.cv is None
+        assert summary.percentiles[10] is None
+
+
+def test_sub_x_rate() -> None:
+    """The share strictly under the limit; DNFs never count as under."""
+    values = [9_000.0, 10_000.0, 11_000.0, DNF]
+
+    assert stats.sub_x_rate(values, 10_000) == 0.25
+    assert stats.sub_x_rate(values, 10_001) == 0.5
+    assert stats.sub_x_rate([], 10_000) is None

@@ -1,0 +1,172 @@
+"""Tests for the Stats tab."""
+
+from datetime import UTC, datetime, timedelta
+
+from PySide6.QtCore import Qt
+from pytestqt.qtbot import QtBot
+
+from cubetrainer.db import TIMER_KIND, Database, DbSessionStore, trainer_session_kind
+from cubetrainer.solves import Penalty, Solve
+from cubetrainer.ui.stats_page import StatsPage, all_sources
+
+START = datetime(2026, 10, 1, tzinfo=UTC)
+
+
+def add(
+    db: Database,
+    session: int,
+    *times: int,
+    case_id: str | None = None,
+    mistake: bool = False,
+    penalty: Penalty = Penalty.OK,
+) -> None:
+    """Add solves to a session, a minute apart (after every solve so far).
+
+    Args:
+        db: The database.
+        session: The session.
+        *times: Solve times in milliseconds.
+        case_id: The case, for trainer solves.
+        mistake: Whether the solves are marked as mistakes.
+        penalty: Their penalty.
+
+    """
+    count = db._conn.execute("SELECT COUNT(*) FROM solves").fetchone()[0]
+    for i, ms in enumerate(times):
+        moment = START + timedelta(minutes=count + i)
+        solve = Solve(ms, "", penalty, moment, case_id=case_id, mistake=mistake)
+        db.add_solve(session, solve)
+
+
+def make_page(qtbot: QtBot, db: Database) -> StatsPage:
+    """Create and show the Stats page.
+
+    Args:
+        qtbot: pytest-qt helper.
+        db: The database.
+
+    Returns:
+        The page.
+
+    """
+    page = StatsPage(db)
+    qtbot.addWidget(page)
+    page.show()
+    return page
+
+
+def test_shows_the_timers_current_session(qtbot: QtBot) -> None:
+    """By default the page summarises the full timer's current session."""
+    db = Database(":memory:")
+    store = DbSessionStore(db, TIMER_KIND)
+    add(db, store.current(), 10_000, 12_000, 14_000)
+    page = make_page(qtbot, db)
+
+    assert page.source_button.text() == "Full timer  ▾"
+    assert page.session_button.text() == "Session 1  ▾"
+    assert not page.case_button.isVisible()
+    assert page.overview["solves"].text() == "3"
+    assert page.overview["mean"].text() == "12.00"
+    assert page.overview["best"].text() == "10.00"
+    assert page.averages[5, "current"].text() == "-"
+
+
+def test_all_sessions_combine_in_time_order(qtbot: QtBot) -> None:
+    """The All option covers every session of the source."""
+    db = Database(":memory:")
+    store = DbSessionStore(db, TIMER_KIND)
+    add(db, store.current(), 10_000, 11_000)
+    other = store.create("Other")
+    add(db, other, 30_000, 31_000, 32_000)
+    page = make_page(qtbot, db)
+
+    page.select_session(None)
+
+    assert page.session_button.text() == "All  ▾"
+    assert page.overview["solves"].text() == "5"
+    assert page.averages[5, "current"].text() == "24.00"  # 11, 30, 31 after trimming
+
+
+def test_trainer_source_filters_cases_and_mistakes(qtbot: QtBot) -> None:
+    """Trainer statistics leave out mistakes and can focus on one case."""
+    db = Database(":memory:")
+    session = DbSessionStore(db, trainer_session_kind("pll")).current()
+    add(db, session, 2_000, 3_000, case_id="T")
+    add(db, session, 1_000, case_id="T", mistake=True)
+    add(db, session, 5_000, case_id="Ua")
+    page = make_page(qtbot, db)
+    pll = next(s for s in all_sources() if s.set_id == "pll")
+
+    page.select_source(pll)
+    assert page.case_button.isVisible()
+    assert page.case_button.text() == "All  ▾"
+    assert page.overview["solves"].text() == "3"  # the mistake is left out
+    assert page.overview["best"].text() == "2.00"
+
+    page.select_case("T")
+    assert page.case_button.text() == "T  ▾"
+    assert page.overview["mean"].text() == "2.50"
+
+
+def test_sub_x_follows_the_limit(qtbot: QtBot) -> None:
+    """Changing the limit updates the sub-X rate."""
+    db = Database(":memory:")
+    add(db, DbSessionStore(db, TIMER_KIND).current(), 9_000, 15_000, 25_000, 35_000)
+    page = make_page(qtbot, db)
+
+    assert page.sub_x_label.text() == "50%  (2 of 4)"
+    page.sub_x.setValue(10)
+    assert page.sub_x_label.text() == "25%  (1 of 4)"
+
+
+def test_empty_source_shows_dashes(qtbot: QtBot) -> None:
+    """With no solves everything shows a dash."""
+    page = make_page(qtbot, Database(":memory:"))
+
+    assert page.overview["solves"].text() == "0"
+    assert page.overview["mean"].text() == "-"
+    assert page.overview["variation (CV)"].text() == "-"
+    assert page.sub_x_label.text() == "-"
+
+
+def test_menus_list_sources_sessions_and_cases(qtbot: QtBot) -> None:
+    """The pickers offer every source, the source's sessions and its cases."""
+    db = Database(":memory:")
+    page = make_page(qtbot, db)
+
+    assert [a.text() for a in page._source_menu.actions()] == [
+        s.label for s in all_sources()
+    ]
+    page._session_menu.aboutToShow.emit()
+    assert [a.text() for a in page._session_menu.actions()] == ["All", "Session 1"]
+
+    page.select_source(next(s for s in all_sources() if s.set_id == "pll2"))
+    page._case_menu.aboutToShow.emit()
+    names = [a.text() for a in page._case_menu.actions()]
+    assert names[:3] == ["All", "Headlights", "Diagonal"]
+    qtbot.mouseClick(page.case_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(page._case_menu.isVisible)
+    page._case_menu.hide()
+
+
+def test_refreshes_when_shown(qtbot: QtBot) -> None:
+    """Solves added elsewhere show up the next time the tab is shown."""
+    db = Database(":memory:")
+    page = make_page(qtbot, db)
+    add(db, DbSessionStore(db, TIMER_KIND).current(), 10_000, 20_000)
+
+    page.hide()
+    page.show()
+
+    assert page.overview["solves"].text() == "2"
+    assert page.overview["median"].text() == "15.00"
+
+
+def test_plus_two_counts_in_times(qtbot: QtBot) -> None:
+    """Penalties apply: a +2 solve counts two seconds slower."""
+    db = Database(":memory:")
+    add(db, DbSessionStore(db, TIMER_KIND).current(), 10_000, penalty=Penalty.PLUS_TWO)
+
+    page = make_page(qtbot, db)
+
+    assert page.overview["best"].text() == "12.00"
