@@ -17,7 +17,8 @@ from cubetrainer.cases.trainer import (
     filtered_case_scrambles,
 )
 from cubetrainer.cube.model import parse_alg, reveal_alg
-from cubetrainer.solves import Penalty, Solve, SolveList
+from cubetrainer.sessions import SessionStore
+from cubetrainer.solves import Penalty, Solve
 from cubetrainer.timing import TimerState
 from cubetrainer.ui.case_images import CaseInfo, case_pixmap
 from cubetrainer.ui.case_stats_panel import CaseStatsPanel
@@ -133,7 +134,7 @@ class TrainerPage(TimerPage):
     def __init__(
         self,
         case_set: CaseSet,
-        solves: SolveList | None = None,
+        sessions: SessionStore | None = None,
         prefs: TrainerPrefs | None = None,
         clock: Callable[[], int] = time.perf_counter_ns,
         parent: QWidget | None = None,
@@ -142,7 +143,7 @@ class TrainerPage(TimerPage):
 
         Args:
             case_set: The cases to train.
-            solves: The trainer session's solves; an empty, unsaved list if omitted.
+            sessions: The trainer's sessions for this set; in memory if omitted.
             prefs: Learning statuses and the case filter; in-memory defaults (every
                 case, equally likely) if omitted.
             clock: Monotonic clock in nanoseconds, passed to the timer.
@@ -151,7 +152,7 @@ class TrainerPage(TimerPage):
         """
         prefs = prefs if prefs is not None else MemoryTrainerPrefs()
         super().__init__(
-            solves=solves,
+            sessions=sessions,
             generate=filtered_case_scrambles(case_set, prefs, np.random.default_rng()),
             clock=clock,
             settings=prefs,
@@ -282,6 +283,13 @@ class TrainerPage(TimerPage):
         else:
             marked = bool(self.solves) and self.solves.solves[-1].mistake
         self.mistake_button.setChecked(marked)
+
+    @override
+    def show_session_solves(self) -> None:
+        """Point the solves table and the per-case table at the new session."""
+        super().show_session_solves()
+        self.case_stats.set_solves(self.solves)
+        self._update_mistake_button()
 
     @override
     def refresh_solves(self) -> None:

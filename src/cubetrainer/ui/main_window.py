@@ -11,8 +11,9 @@ from PySide6.QtWidgets import (
 
 from cubetrainer.cases.catalog import load_case_set
 from cubetrainer.db import (
+    TIMER_KIND,
     Database,
-    StoredSolveList,
+    DbSessionStore,
     StoredTrainerPrefs,
     trainer_session_kind,
 )
@@ -64,8 +65,10 @@ class MainWindow(QMainWindow):
         self.resize(1280, 760)
 
         self.tabs: QTabWidget = QTabWidget()
-        timer_solves = StoredSolveList(db, db.get_or_create_session())
-        self.timer_page: TimerPage = TimerPage(solves=timer_solves, settings=db)
+        self.timer_page: TimerPage = TimerPage(
+            sessions=DbSessionStore(db, TIMER_KIND),
+            settings=db,
+        )
         self.trainer_pages: dict[str, TrainerPage] = {}
         self.timer_stack: QStackedWidget = QStackedWidget()
         self.timer_stack.addWidget(self.timer_page)
@@ -85,10 +88,9 @@ class MainWindow(QMainWindow):
         """
         page = self.trainer_pages.get(set_id)
         if page is None:
-            session = self._db.get_or_create_session(trainer_session_kind(set_id))
             page = TrainerPage(
                 load_case_set(set_id),
-                solves=StoredSolveList(self._db, session),
+                sessions=DbSessionStore(self._db, trainer_session_kind(set_id)),
                 prefs=StoredTrainerPrefs(self._db, set_id),
             )
             page.back_requested.connect(self.open_timer)

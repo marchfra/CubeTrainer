@@ -85,6 +85,16 @@ class CaseStatsModel(QAbstractTableModel):
         ]
         self.endResetModel()
 
+    def set_solves(self, solves: SolveList) -> None:
+        """Use another solve list.
+
+        Args:
+            solves: The new list.
+
+        """
+        self._solves = solves
+        self.refresh()
+
     @staticmethod
     def _row(position: int, name: str, case: CaseStats) -> tuple[_Cell, ...]:
         """Build the cells of one case's row.
@@ -248,3 +258,12 @@ class CaseStatsPanel(QWidget):
     def refresh(self) -> None:
         """Recompute the statistics after the solves changed."""
         self.model.refresh()
+
+    def set_solves(self, solves: SolveList) -> None:
+        """Show the statistics of another solve list (e.g. after switching session).
+
+        Args:
+            solves: The new list.
+
+        """
+        self.model.set_solves(solves)

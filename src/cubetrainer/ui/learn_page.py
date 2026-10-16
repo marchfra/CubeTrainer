@@ -27,7 +27,7 @@ from cubetrainer.cases.catalog import (
     customize,
     load_case_set,
 )
-from cubetrainer.db import Database, trainer_session_kind
+from cubetrainer.db import Database, DbSessionStore, trainer_session_kind
 from cubetrainer.formatting import format_average, format_value
 from cubetrainer.ui.case_editor import CaseEditor
 from cubetrainer.ui.case_images import case_pixmap
@@ -310,9 +310,9 @@ class CaseList(QWidget):
         self.alg_labels[case_id].setText(shown.alg)
 
     def refresh_times(self) -> None:
-        """Reload the trainer solves and show each case's best and mean time."""
-        session = self._db.get_or_create_session(trainer_session_kind(self.case_set.id))
-        by_case = stats.case_stats(self._db.load_solves(session))
+        """Show each case's best and mean time in the set's current trainer session."""
+        sessions = DbSessionStore(self._db, trainer_session_kind(self.case_set.id))
+        by_case = stats.case_stats(self._db.load_solves(sessions.current()))
         for case in self.case_set.cases:
             case_stats = by_case.get(case.id)
             best = case_stats.best if case_stats else None

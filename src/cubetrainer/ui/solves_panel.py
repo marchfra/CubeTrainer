@@ -98,6 +98,16 @@ class SolvesTableModel(QAbstractTableModel):
         }
         self.endResetModel()
 
+    def set_solves(self, solves: SolveList) -> None:
+        """Show another solve list (e.g. after switching session).
+
+        Args:
+            solves: The new list.
+
+        """
+        self._solves = solves
+        self.refresh()
+
     def solve_index(self, row: int) -> int:
         """Convert a table row to a position in the solve list.
 
@@ -344,6 +354,17 @@ class SolvesPanel(QWidget):
         """Redraw the summary and the table after the solve list changed."""
         self.model.refresh()
         self.summary.update_from(self._solves)
+
+    def set_solves(self, solves: SolveList) -> None:
+        """Show another solve list (e.g. after switching session).
+
+        Args:
+            solves: The new list.
+
+        """
+        self._solves = solves
+        self.model.set_solves(solves)
+        self.summary.update_from(solves)
 
     def _on_clicked(self, index: QModelIndex) -> None:
         """Forward a row click as a solve index.

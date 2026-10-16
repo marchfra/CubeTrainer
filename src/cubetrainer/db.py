@@ -17,6 +17,7 @@ import platformdirs
 
 from cubetrainer.cases.catalog import CaseCustomization, CaseStatus
 from cubetrainer.cases.filters import CaseFilter
+from cubetrainer.sessions import SESSION_STEM, SessionInfo
 from cubetrainer.solves import Penalty, Solve, SolveList
 
 #: Environment variable overriding where the database lives (useful for development).
@@ -35,7 +36,7 @@ DB_FILENAME: str = "cubetrainer.db"
 TIMER_KIND: str = "timer"
 
 #: Name given to the session created automatically on first use.
-DEFAULT_SESSION_NAME: str = "Session 1"
+DEFAULT_SESSION_NAME: str = f"{SESSION_STEM} 1"
 
 #: Schema migrations; applying ``MIGRATIONS[i]`` moves the database to version i + 1.
 MIGRATIONS: tuple[str, ...] = (
@@ -195,6 +196,71 @@ class Database:
         session_id = cursor.lastrowid
         assert session_id is not None  # noqa: S101 - always set after an INSERT
         return session_id
+
+    def list_sessions(self, kind: str) -> list[SessionInfo]:
+        """List the sessions of a kind, in display order.
+
+        Args:
+            kind: Session kind, e.g. ``"timer"``.
+
+        Returns:
+            The sessions (possibly none).
+
+        """
+        rows = self._conn.execute(
+            "SELECT id, name FROM sessions WHERE kind = ? ORDER BY sort_order, id",
+            (kind,),
+        )
+        return [SessionInfo(session_id, name) for session_id, name in rows]
+
+    def create_session(self, kind: str, name: str) -> int:
+        """Add a session at the end of a kind's list.
+
+        Args:
+            kind: Session kind.
+            name: Its name.
+
+        Returns:
+            The new session's id.
+
+        """
+        with self._conn:
+            (last,) = self._conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM sessions WHERE kind = ?",
+                (kind,),
+            ).fetchone()
+            cursor = self._conn.execute(
+                "INSERT INTO sessions (name, kind, created_at, sort_order)"
+                " VALUES (?, ?, ?, ?)",
+                (name, kind, datetime.now(UTC).isoformat(), last + 1),
+            )
+        session_id = cursor.lastrowid
+        assert session_id is not None  # noqa: S101 - always set after an INSERT
+        return session_id
+
+    def rename_session(self, session_id: int, name: str) -> None:
+        """Rename a session.
+
+        Args:
+            session_id: The session.
+            name: Its new name.
+
+        """
+        with self._conn:
+            self._conn.execute(
+                "UPDATE sessions SET name = ? WHERE id = ?",
+                (name, session_id),
+            )
+
+    def delete_session(self, session_id: int) -> None:
+        """Delete a session and (by cascade) its solves.
+
+        Args:
+            session_id: The session.
+
+        """
+        with self._conn:
+            self._conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
 
     def load_solves(self, session_id: int) -> list[Solve]:
         """Load all solves of a session, oldest first.
@@ -506,6 +572,115 @@ class StoredTrainerPrefs:
 
         """
         self.db.set_setting(self._filter_key, case_filter.to_json())
+
+
+class DbSessionStore:
+    """The sessions of one kind (one page), kept in the database.
+
+    The current session is remembered in a setting.
+
+    Attributes:
+        db: The database.
+        kind: Session kind, e.g. ``"timer"`` or ``"trainer:pll"``.
+
+    """
+
+    def __init__(self, db: Database, kind: str) -> None:
+        """Create the store.
+
+        Args:
+            db: The database.
+            kind: Session kind.
+
+        """
+        self.db: Database = db
+        self.kind: str = kind
+
+    @property
+    def _current_key(self) -> str:
+        """The setting holding the current session's id."""
+        return f"session.current:{self.kind}"
+
+    def sessions(self) -> list[SessionInfo]:
+        """List the sessions, creating a first one if there are none.
+
+        Returns:
+            The sessions in display order.
+
+        """
+        sessions = self.db.list_sessions(self.kind)
+        if not sessions:
+            self.db.get_or_create_session(self.kind)
+            sessions = self.db.list_sessions(self.kind)
+        return sessions
+
+    def current(self) -> int:
+        """Return the current session (the first one if none was chosen).
+
+        Returns:
+            The session id.
+
+        """
+        ids = [session.id for session in self.sessions()]
+        stored = self.db.get_setting(self._current_key)
+        if stored is not None and int(stored) in ids:
+            return int(stored)
+        return ids[0]
+
+    def select(self, session_id: int) -> None:
+        """Make a session the current one.
+
+        Args:
+            session_id: The session.
+
+        """
+        self.db.set_setting(self._current_key, str(session_id))
+
+    def create(self, name: str) -> int:
+        """Add a session at the end of the list.
+
+        Args:
+            name: Its name.
+
+        Returns:
+            The new session's id.
+
+        """
+        return self.db.create_session(self.kind, name)
+
+    def rename(self, session_id: int, name: str) -> None:
+        """Rename a session.
+
+        Args:
+            session_id: The session.
+            name: Its new name.
+
+        """
+        self.db.rename_session(session_id, name)
+
+    def delete(self, session_id: int) -> None:
+        """Delete a session and its solves; the current one moves if needed.
+
+        Args:
+            session_id: The session (never the only one).
+
+        """
+        was_current = self.current() == session_id
+        self.db.delete_session(session_id)
+        if was_current:
+            self.select(self.sessions()[0].id)
+
+    def solves(self, session_id: int) -> SolveList:
+        """Return a session's solves, saving every change.
+
+        Args:
+            session_id: The session.
+
+        Returns:
+            The stored solve list.
+
+        """
+        return StoredSolveList(self.db, session_id)
 
 
 class StoredSolveList(SolveList):

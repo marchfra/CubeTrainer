@@ -12,6 +12,7 @@ from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
+    QInputDialog,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from cubetrainer.cube.scramble import random_state_scramble
 from cubetrainer.formatting import format_solve
+from cubetrainer.sessions import MemorySessionStore, SessionStore, next_session_name
 from cubetrainer.settings import MemorySettings, Settings, get_flag, set_flag
 from cubetrainer.solves import Penalty, Solve, SolveList
 from cubetrainer.sound import InspectionAudio
@@ -54,6 +56,23 @@ def default_scramble_generator() -> Callable[[], str]:
     return lambda: random_state_scramble(rng)
 
 
+def ask_text(parent: QWidget, label: str, text: str) -> str | None:
+    """Ask for a line of text in a small dialog.
+
+    Args:
+        parent: Parent of the dialog.
+        label: What to ask.
+        text: The suggested answer.
+
+    Returns:
+        The answer with spaces trimmed, or None if cancelled or left empty.
+
+    """
+    answer, accepted = QInputDialog.getText(parent, "CubeTrainer", label, text=text)
+    answer = answer.strip()
+    return answer if accepted and answer else None
+
+
 def ask_confirmation(parent: QWidget, question: str) -> bool:
     """Ask a yes/no question in a message box.
 
@@ -73,7 +92,11 @@ class TimerPage(QWidget):
     """Full-solve timer page; also the base of the trainer page.
 
     Attributes:
-        solves: The solves done in this session.
+        sessions: The page's sessions.
+        solves: The solves of the current session.
+        session_button: Shows the current session; opens ``session_menu``.
+        session_menu: Switches, adds, renames or deletes sessions.
+        ask_text: Asks for a line of text; replaceable in tests.
         solves_panel: Summary and table of solves.
         scramble_bar: Shows the scramble to apply before the solve.
         timer: The spacebar-driven timer.
@@ -102,16 +125,16 @@ class TimerPage(QWidget):
 
     def __init__(
         self,
-        solves: SolveList | None = None,
+        sessions: SessionStore | None = None,
         generate: Callable[[], str] | None = None,
         clock: Callable[[], int] = time.perf_counter_ns,
         settings: Settings | None = None,
         parent: QWidget | None = None,
     ) -> None:
-        """Create the page.
+        """Create the page, showing the current session.
 
         Args:
-            solves: The session's solves; an empty, unsaved list if omitted.
+            sessions: The page's sessions; in memory if omitted.
             generate: Scramble generator; defaults to random-state full-cube scrambles.
             clock: Monotonic clock in nanoseconds, passed to the timer.
             settings: Where the options are kept; in memory if omitted.
@@ -120,8 +143,16 @@ class TimerPage(QWidget):
         """
         super().__init__(parent)
         self.settings: Settings = settings if settings is not None else MemorySettings()
-        self.solves: SolveList = solves if solves is not None else SolveList()
+        self.sessions: SessionStore = (
+            sessions if sessions is not None else MemorySessionStore()
+        )
+        self.solves: SolveList = self.sessions.solves(self.sessions.current())
         self.confirm: Callable[[str], bool] = lambda q: ask_confirmation(self, q)
+        self.ask_text: Callable[[str, str], str | None] = lambda label, text: ask_text(
+            self,
+            label,
+            text,
+        )
         self.run_dialog: Callable[[QDialog], int] = lambda d: d.exec()
         self._solve_scramble: str = ""
 
@@ -148,13 +179,112 @@ class TimerPage(QWidget):
         self.right_column.addWidget(self.scramble_bar)
         self.right_column.addWidget(self.timer, stretch=1)
         self.columns: QHBoxLayout = QHBoxLayout(self)
-        self.columns.addWidget(self.solves_panel)
+        self.columns.addWidget(self._build_left_column())
         self.columns.addLayout(self.right_column, stretch=1)
 
         self.shortcuts: dict[str, QShortcut] = {}
         for penalty, keys in PENALTY_SHORTCUTS.items():
             self._add_shortcut(keys, lambda p=penalty: self.set_last_penalty(p))
         self._add_shortcut(DELETE_LAST_SHORTCUT, self.delete_last)
+
+    def _build_left_column(self) -> QWidget:
+        """Create the left column: the session button above the solves panel.
+
+        Returns:
+            The column.
+
+        """
+        self.session_menu: QMenu = QMenu(self)
+        self.session_menu.aboutToShow.connect(self._fill_session_menu)
+        self.session_button: QPushButton = QPushButton()
+        self.session_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.session_button.setToolTip("Switch, add, rename or delete sessions")
+        self.session_button.clicked.connect(
+            lambda: self.session_menu.popup(
+                self.session_button.mapToGlobal(
+                    self.session_button.rect().bottomLeft(),
+                ),
+            ),
+        )
+        self._update_session_button()
+
+        column = QWidget()
+        column.setFixedWidth(_SOLVES_PANEL_WIDTH)
+        box = QVBoxLayout(column)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(self.session_button)
+        box.addWidget(self.solves_panel, stretch=1)
+        return column
+
+    def _fill_session_menu(self) -> None:
+        """Rebuild the session menu: every session (the current one ticked), actions."""
+        self.session_menu.clear()
+        current = self.sessions.current()
+        sessions = self.sessions.sessions()
+        for session in sessions:
+            action = self.session_menu.addAction(session.name)
+            action.setCheckable(True)
+            action.setChecked(session.id == current)
+            action.triggered.connect(
+                lambda _=False, sid=session.id: self.switch_session(sid),
+            )
+        self.session_menu.addSeparator()
+        self.session_menu.addAction("New session…", self.new_session)
+        self.session_menu.addAction("Rename session…", self.rename_session)
+        delete = self.session_menu.addAction("Delete session…", self.delete_session)
+        delete.setEnabled(len(sessions) > 1)
+
+    def _update_session_button(self) -> None:
+        """Show the current session's name on the session button."""
+        current = self.sessions.current()
+        name = next(s.name for s in self.sessions.sessions() if s.id == current)
+        self.session_button.setText(f"{name}  ▾")
+
+    def switch_session(self, session_id: int) -> None:
+        """Make a session current and show its solves.
+
+        Args:
+            session_id: The session.
+
+        """
+        self.sessions.select(session_id)
+        self.solves = self.sessions.solves(session_id)
+        self.show_session_solves()
+        self._update_session_button()
+
+    def show_session_solves(self) -> None:
+        """Point every view at ``solves`` after the session changed (subclasses add)."""
+        self.solves_panel.set_solves(self.solves)
+
+    def new_session(self) -> None:
+        """Ask for a name, then create a session and switch to it."""
+        name = self.ask_text(
+            "Name of the new session:",
+            next_session_name(self.sessions.sessions()),
+        )
+        if name:
+            self.switch_session(self.sessions.create(name))
+
+    def rename_session(self) -> None:
+        """Ask for a new name for the current session."""
+        current = self.sessions.current()
+        old = next(s.name for s in self.sessions.sessions() if s.id == current)
+        name = self.ask_text("New name of the session:", old)
+        if name:
+            self.sessions.rename(current, name)
+            self._update_session_button()
+
+    def delete_session(self) -> None:
+        """Delete the current session and its solves, after asking (never the last)."""
+        sessions = self.sessions.sessions()
+        if len(sessions) < 2:  # noqa: PLR2004 - one session must always remain
+            return
+        current = self.sessions.current()
+        name = next(s.name for s in sessions if s.id == current)
+        count = len(self.solves)
+        if self.confirm(f"Delete the session {name!r} and its {count} solves?"):
+            self.sessions.delete(current)
+            self.switch_session(self.sessions.current())
 
     def _build_options(self) -> QPushButton:
         """Create the Options button and its menu, set from the saved settings.

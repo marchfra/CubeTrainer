@@ -8,7 +8,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QDialog, QPushButton
 from pytestqt.qtbot import QtBot
 
-from cubetrainer.db import Database, StoredSolveList
+from cubetrainer.db import TIMER_KIND, Database, DbSessionStore
 from cubetrainer.settings import MemorySettings
 from cubetrainer.solves import Penalty
 from cubetrainer.ui.sizing import reserve_width
@@ -230,7 +230,7 @@ def test_dialog_penalty_change_is_saved(qtbot: QtBot, clock: FakeClock) -> None:
     db = Database(":memory:")
     session = db.get_or_create_session()
     page = TimerPage(
-        solves=StoredSolveList(db, session),
+        sessions=DbSessionStore(db, TIMER_KIND),
         generate=lambda: "s",
         clock=clock,
     )

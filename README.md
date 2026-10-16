@@ -18,6 +18,10 @@ Built with Python and PySide6.
 - Solves table (newest first) with rolling ao5 and ao12, plus a summary of current and
   best single / ao5 / ao12, solve count and session mean.
 - Click a solve to see its details, change its penalty or delete it.
+- **Sessions**, cstimer-style (the *Session ▾* button above the list): switch
+  between sessions, or create, rename or delete one (deleting asks first and
+  takes its solves with it; the last session can't be deleted). Statistics are
+  per session, and the current session is remembered.
 - Solves are saved automatically and survive restarts.
 
 | Shortcut | Action |
@@ -66,7 +70,9 @@ and averages and means are rounded to the nearest hundredth.
   leave nothing selected, the trainer falls back to all cases and says so.
 - The solves table has a case column, and the solve dialog shows the case's name
   and image. The case is recognised from the scramble itself.
-- Trainer solves are stored in their own session, separate from full solves.
+- Trainer solves are kept apart from full solves: each set's trainer has its own
+  sessions, with the same *Session ▾* menu. The Learn tab's best/avg come from the
+  set's current trainer session.
 - **Hints:** press → to show the case image and the first move of its algorithm;
   each further → reveals one more move. The moves start from the case as the image
   shows it, so turn the U layer to match the image first. Brackets that group an
@@ -134,6 +140,7 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
       inspection.py        inspection countdown, penalties and warnings
       sound.py             generated inspection beeps
       settings.py          key-value settings
+      sessions.py          sessions (in memory; the database version is in db.py)
       solves.py            Solve, Penalty, SolveList
       stats.py             averages, means, bests
       formatting.py        time / solve display strings
