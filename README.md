@@ -18,6 +18,9 @@ Built with Python and PySide6.
 - Solves table (newest first) with rolling ao5 and ao12, plus a summary of current and
   best single / ao5 / ao12, solve count and session mean.
 - Click a solve to see its details, change its penalty or delete it.
+- **Time graph** under the timer: singles, ao5 and ao12 over the session (DNFs are
+  gaps). Hover for a crosshair and the values at that solve. Follows the system's
+  light/dark mode.
 - **Sessions**, cstimer-style (the *Session ▾* button above the list): switch
   between sessions, or create, rename or delete one (deleting asks first and
   takes its solves with it; the last session can't be deleted). Statistics are
@@ -157,7 +160,8 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
         filters.py         case filter and case probabilities
         editing.py         checking a user's algorithm
         data/              bundled OLL and PLL cases and default algorithms
-      ui/                  Qt widgets: main window, timer/trainer/learn pages, dialogs
+      ui/                  Qt widgets: main window, timer/trainer/learn pages, dialogs,
+                           time graph (matplotlib)
     tests/                 pytest + pytest-qt
 
 ## License

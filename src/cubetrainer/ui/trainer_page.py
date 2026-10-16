@@ -123,6 +123,7 @@ class TrainerPage(TimerPage):
         PANEL_LAYOUT: The trainer table, with a case column.
         SETTINGS_PREFIX: Trainer options are shared by every set.
         INSPECTION_DEFAULT: Inspection is off in the trainer until turned on.
+        SHOW_GRAPH: No time graph: times of different cases don't make a trend.
 
     """
 
@@ -130,6 +131,7 @@ class TrainerPage(TimerPage):
     PANEL_LAYOUT: PanelLayout = TRAINER_LAYOUT
     SETTINGS_PREFIX: str = "trainer"
     INSPECTION_DEFAULT: bool = False
+    SHOW_GRAPH: bool = False
 
     def __init__(
         self,

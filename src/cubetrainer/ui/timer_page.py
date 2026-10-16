@@ -30,6 +30,7 @@ from cubetrainer.ui.case_images import CaseInfo
 from cubetrainer.ui.scramble_bar import ScrambleBar
 from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.solves_panel import TIMER_LAYOUT, PanelLayout, SolvesPanel
+from cubetrainer.ui.time_graph import TimeGraph
 from cubetrainer.ui.timer_widget import TimerWidget
 
 #: Keyboard shortcut for each penalty on the last solve. "Ctrl" is Cmd on macOS.
@@ -116,12 +117,15 @@ class TimerPage(QWidget):
         PANEL_LAYOUT: Statistics and columns of the solves panel.
         SETTINGS_PREFIX: Start of this page's setting names.
         INSPECTION_DEFAULT: Whether inspection is on until the user changes it.
+        SHOW_GRAPH: Whether the page has a time graph under the timer.
+        time_graph: The time graph, or None on pages without one.
 
     """
 
     PANEL_LAYOUT: PanelLayout = TIMER_LAYOUT
     SETTINGS_PREFIX: str = "timer"
     INSPECTION_DEFAULT: bool = True
+    SHOW_GRAPH: bool = True
 
     def __init__(
         self,
@@ -178,6 +182,10 @@ class TimerPage(QWidget):
         self.right_column.addLayout(self.header)
         self.right_column.addWidget(self.scramble_bar)
         self.right_column.addWidget(self.timer, stretch=1)
+        self.time_graph: TimeGraph | None = None
+        if self.SHOW_GRAPH:
+            self.time_graph = TimeGraph(self.solves)
+            self.right_column.addWidget(self.time_graph)
         self.columns: QHBoxLayout = QHBoxLayout(self)
         self.columns.addWidget(self._build_left_column())
         self.columns.addLayout(self.right_column, stretch=1)
@@ -255,6 +263,8 @@ class TimerPage(QWidget):
     def show_session_solves(self) -> None:
         """Point every view at ``solves`` after the session changed (subclasses add)."""
         self.solves_panel.set_solves(self.solves)
+        if self.time_graph is not None:
+            self.time_graph.set_solves(self.solves)
 
     def new_session(self) -> None:
         """Ask for a name, then create a session and switch to it."""
@@ -431,6 +441,8 @@ class TimerPage(QWidget):
     def refresh_solves(self) -> None:
         """Redraw everything showing the solves (subclasses add their own views)."""
         self.solves_panel.refresh()
+        if self.time_graph is not None:
+            self.time_graph.refresh()
 
     def case_name(self, case_id: str) -> str:
         """Return the display name of a case (subclasses with cases override this).
