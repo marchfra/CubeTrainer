@@ -1,6 +1,7 @@
 {
   "id": "pll",
   "name": "PLL",
+  "kind": "pll",
   "cases": [
     {"id": "Aa", "name": "Aa", "group": "Adjacent Corner Swap", "alg": "x L2 D2 (L' U' L) D2 (L' U L')"},
     {"id": "Ab", "name": "Ab", "group": "Adjacent Corner Swap", "alg": "x' L2 D2 (L U L') D2 (L U' L)"},

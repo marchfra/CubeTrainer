@@ -1,5 +1,6 @@
 """Identify last-layer cases independently of the AUFs around them."""
 
+from cubetrainer.cases.catalog import CaseKind
 from cubetrainer.cube.model import STICKERS, CubeState, Move
 
 #: Side faces in the order a U turn cycles their top-row colours.
@@ -76,3 +77,64 @@ def pll_key(state: CubeState) -> str:
             }
             candidates.append("".join(relabel[c] for c in pattern))
     return min(candidates)
+
+
+#: Facelet indices of all 21 top-layer stickers (U face and the sides' top rows).
+_TOP_LAYER_STICKERS: tuple[int, ...] = tuple(
+    i for i, (position, _normal) in enumerate(STICKERS) if position[1] == 1
+)
+
+
+def oll_pattern(state: CubeState) -> str:
+    """Return which top-layer stickers show the U colour, as a string of 0s and 1s.
+
+    This is what an OLL case looks like; the permutation of the pieces is ignored.
+
+    Args:
+        state: A cube state in standard orientation.
+
+    Returns:
+        A 21-character string, one character per top-layer sticker.
+
+    """
+    facelets = state.facelets()
+    return "".join("1" if facelets[i] == "U" else "0" for i in _TOP_LAYER_STICKERS)
+
+
+def oll_key(state: CubeState) -> str:
+    """Return a key identifying an OLL case regardless of the U turn before it.
+
+    Args:
+        state: A cube state with F2L solved, in standard orientation.
+
+    Returns:
+        The smallest orientation pattern over the four turns of the U layer.
+
+    Raises:
+        ValueError: If F2L isn't solved.
+
+    """
+    if not is_f2l_solved(state):
+        msg = "oll_key needs a state with F2L solved"
+        raise ValueError(msg)
+    return min(
+        oll_pattern(state.apply([Move("U", turns)]) if turns else state)
+        for turns in range(4)
+    )
+
+
+def case_key(kind: CaseKind, state: CubeState) -> str | None:
+    """Identify the case a state shows, for sets of the given kind.
+
+    Args:
+        kind: OLL or PLL.
+        state: A cube state in standard orientation.
+
+    Returns:
+        The case key (``oll_key`` or ``pll_key``), or None if the state isn't a case
+        of that kind (F2L broken, or for PLL, the U face not solved).
+
+    """
+    if kind is CaseKind.PLL:
+        return pll_key(state) if is_oll_solved(state) else None
+    return oll_key(state) if is_f2l_solved(state) else None

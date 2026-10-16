@@ -22,6 +22,9 @@ COLOR_SCHEME: dict[str, str] = {
     "L": "#c41e3a",
 }
 
+#: Colour of stickers whose colour doesn't matter (e.g. the sides in OLL images).
+IGNORED_COLOR: str = "#8a8a8a"
+
 #: Outline colour of stickers and colour of arrows.
 INK_COLOR: str = "#1a1a1a"
 
@@ -281,13 +284,21 @@ def _draw_arrow(painter: QPainter, arrow: Arrow) -> None:
         _arrow_head(painter, reverse.p2(), reverse)
 
 
-def render_last_layer(state: CubeState, size: int, *, arrows: bool = True) -> QImage:
+def render_last_layer(
+    state: CubeState,
+    size: int,
+    *,
+    arrows: bool = True,
+    orientation_only: bool = False,
+) -> QImage:
     """Render the top-down view of a state's last layer.
 
     Args:
         state: The cube state, in standard orientation.
         size: Width and height of the image in pixels.
         arrows: Whether to draw arrows showing how the pieces move.
+        orientation_only: Draw only which stickers show the U colour (in yellow),
+            the rest grey, as for OLL cases.
 
     Returns:
         A square image with a transparent background.
@@ -305,7 +316,11 @@ def render_last_layer(state: CubeState, size: int, *, arrows: bool = True) -> QI
     for index, (position, normal) in enumerate(STICKERS):
         if position[1] != 1 or normal[1] == -1:
             continue
-        painter.setBrush(QColor(COLOR_SCHEME[facelets[index]]))
+        face = facelets[index]
+        if orientation_only and face != "U":
+            painter.setBrush(QColor(IGNORED_COLOR))
+        else:
+            painter.setBrush(QColor(COLOR_SCHEME[face]))
         painter.drawRoundedRect(_sticker_rect(position, normal), 0.08, 0.08)
 
     if arrows:

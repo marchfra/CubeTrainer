@@ -379,6 +379,22 @@ class CubeState:
         """
         return self.apply(parse_alg(text))
 
+    def followed_by(self, later: CubeState) -> CubeState:
+        """Return the state reached by doing this state's moves, then ``later``'s.
+
+        Both states are seen as the result of some moves on a solved cube; the
+        result is as if those moves were done one after the other. To solve it,
+        undo ``later`` first, then this state.
+
+        Args:
+            later: The state whose moves are done second.
+
+        Returns:
+            The combined state.
+
+        """
+        return CubeState(tuple(self.stickers[i] for i in later.stickers))
+
     def facelets(self) -> str:
         """Return the 54-character facelet string (colours named by their home face).
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from functools import cache
 from importlib import resources
 
@@ -29,6 +29,15 @@ class CaseStatus(Enum):
         return order[(order.index(self) + 1) % len(order)]
 
 
+class CaseKind(StrEnum):
+    """What a set's cases are about, which decides how they're told apart and drawn."""
+
+    OLL = "oll"
+    """Orienting the last layer: cases differ by which stickers face up."""
+    PLL = "pll"
+    """Permuting the last layer: cases differ by where the pieces go."""
+
+
 @dataclass(frozen=True, slots=True)
 class Case:
     """One algorithm case.
@@ -38,6 +47,7 @@ class Case:
         name: Display name.
         group: Group the case belongs to (e.g. ``"Edges Only"``).
         alg: Default algorithm that solves the case.
+        kind: Whether it's an OLL or a PLL case.
 
     """
 
@@ -45,6 +55,7 @@ class Case:
     name: str
     group: str
     alg: str
+    kind: CaseKind = CaseKind.PLL
 
     def state(self) -> CubeState:
         """Return the cube state this case's algorithm solves.
@@ -63,12 +74,14 @@ class CaseSet:
     Attributes:
         id: Identifier (e.g. ``"pll"``), also used as the data file name.
         name: Display name.
+        kind: Whether the set's cases are OLL or PLL cases.
         cases: The cases.
 
     """
 
     id: str
     name: str
+    kind: CaseKind
     cases: tuple[Case, ...]
 
     @property
@@ -90,8 +103,9 @@ def load_case_set(set_id: str) -> CaseSet:
     """
     text = resources.files(__package__).joinpath("data", f"{set_id}.json").read_text()
     data = json.loads(text)
+    kind = CaseKind(data["kind"])
     cases = tuple(
-        Case(id=c["id"], name=c["name"], group=c["group"], alg=c["alg"])
+        Case(id=c["id"], name=c["name"], group=c["group"], alg=c["alg"], kind=kind)
         for c in data["cases"]
     )
-    return CaseSet(id=data["id"], name=data["name"], cases=cases)
+    return CaseSet(id=data["id"], name=data["name"], kind=kind, cases=cases)

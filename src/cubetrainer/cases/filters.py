@@ -14,7 +14,8 @@ from typing import Protocol
 
 import numpy as np
 
-from cubetrainer.cases.catalog import Case, CaseSet, CaseStatus
+from cubetrainer.cases.catalog import Case, CaseKind, CaseSet, CaseStatus
+from cubetrainer.cases.recognition import oll_pattern
 from cubetrainer.cube.model import Move, parse_alg, state_solved_by
 
 
@@ -165,28 +166,46 @@ class MemoryTrainerPrefs:
         self.case_filter = case_filter
 
 
-@cache
-def case_weight(alg: str) -> int:
-    """Return how many distinct cube states a case covers, over all its AUFs.
+#: Number of distinct states of the PLL skip (solved up to a U turn).
+PLL_SKIP_WEIGHT: int = 4
 
-    A uniformly random cube shows each such state equally often, so a case's
-    natural frequency is proportional to this number. For PLL it's 16 for most
-    cases, 8 for E and Z, and 4 for H, Na and Nb.
+
+def case_weight(case: Case) -> int:
+    """Return how many distinct looks a case has, over all its U turns.
+
+    A uniformly random cube shows each look equally often, so a case's natural
+    frequency is proportional to this number. For PLL a look is a whole last-layer
+    state, over U turns before and after (16 for most cases, 8 for E and Z, 4 for H,
+    Na and Nb). For OLL it's an orientation pattern, over U turns before (4 for most
+    cases, 2 or 1 for symmetric ones).
+
+    Args:
+        case: The case.
+
+    Returns:
+        The number of distinct looks.
+
+    """
+    return _case_weight(case.alg, case.kind)
+
+
+@cache
+def _case_weight(alg: str, kind: CaseKind) -> int:
+    """Compute ``case_weight`` (cached by algorithm and kind).
 
     Args:
         alg: The case's algorithm.
+        kind: OLL or PLL.
 
     Returns:
-        The number of distinct states (1 to 16).
+        The number of distinct looks.
 
     """
     moves = parse_alg(alg)
     aufs: list[list[Move]] = [[], *([Move("U", turns)] for turns in (1, 2, 3))]
-    states = {
-        state_solved_by(moves, before=before, after=after)
-        for before in aufs
-        for after in aufs
-    }
+    if kind is CaseKind.OLL:
+        return len({oll_pattern(state_solved_by(moves, before=b)) for b in aufs})
+    states = {state_solved_by(moves, before=b, after=a) for b in aufs for a in aufs}
     return len(states)
 
 
@@ -204,5 +223,5 @@ def pick_case(cases: list[Case], rng: np.random.Generator, *, realistic: bool) -
     """
     if not realistic:
         return cases[int(rng.integers(len(cases)))]
-    weights = np.array([case_weight(case.alg) for case in cases], dtype=float)
+    weights = np.array([case_weight(case) for case in cases], dtype=float)
     return cases[int(rng.choice(len(cases), p=weights / weights.sum()))]

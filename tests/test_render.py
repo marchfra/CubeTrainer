@@ -5,7 +5,13 @@ from PySide6.QtGui import QColor
 
 from cubetrainer.cases.catalog import Case, load_case_set
 from cubetrainer.cube.model import SOLVED, parse_alg, state_solved_by
-from cubetrainer.cube.render import COLOR_SCHEME, Arrow, piece_arrows, render_last_layer
+from cubetrainer.cube.render import (
+    COLOR_SCHEME,
+    IGNORED_COLOR,
+    Arrow,
+    piece_arrows,
+    render_last_layer,
+)
 
 T_PERM = "R U R' U' R' F R2 U' R' U' R U R' F'"
 
@@ -158,3 +164,20 @@ def test_g_perm_arrows_match_confirmed_diagrams(case_id: str) -> None:
 
     expected = {CELLS[a]: CELLS[b] for a, b in G_PERM_MOVES[case_id].items()}
     assert {a.start: a.end for a in arrows} == expected
+
+
+def test_orientation_only_shows_yellow_and_grey() -> None:
+    """OLL images: U-coloured stickers yellow, the others grey, no arrows."""
+    sune = next(c for c in load_case_set("oll").cases if c.id == "27")
+    size = 195
+    image = render_last_layer(sune.state(), size, arrows=False, orientation_only=True)
+
+    colours = {
+        image.pixelColor(x, y).name()
+        for x in range(5, size, 10)
+        for y in range(5, size, 10)
+        if image.pixelColor(x, y).alpha() == 255
+    }
+    assert QColor(COLOR_SCHEME["U"]).name() in colours
+    assert QColor(IGNORED_COLOR).name() in colours
+    assert QColor(COLOR_SCHEME["F"]).name() not in colours

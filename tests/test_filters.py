@@ -8,6 +8,7 @@ import pytest
 
 from cubetrainer.cases.catalog import CaseStatus, load_case_set
 from cubetrainer.cases.filters import (
+    PLL_SKIP_WEIGHT,
     CaseFilter,
     MemoryTrainerPrefs,
     case_weight,
@@ -86,11 +87,25 @@ def test_json_round_trip(case_filter: CaseFilter) -> None:
 
 def test_case_weights_give_the_known_pll_frequencies() -> None:
     """Weights are proportional to how often each PLL comes up (skip has 4 states)."""
-    weights = {case.id: case_weight(case.alg) for case in PLL.cases}
-    total = sum(weights.values()) + 4  # the PLL skip: solved up to an AUF
+    weights = {case.id: case_weight(case) for case in PLL.cases}
+    total = sum(weights.values()) + PLL_SKIP_WEIGHT
 
     assert total == 288
     assert {cid: Fraction(w, total) for cid, w in weights.items()} == PLL_FREQUENCY
+
+
+def test_case_weights_give_the_known_oll_frequencies() -> None:
+    """OLL 20 is 1/216; 1, 21, 55, 56 and 57 are 1/108; the rest 1/54."""
+    weights = {case.id: case_weight(case) for case in load_case_set("oll").cases}
+    total = sum(weights.values()) + 1  # the OLL skip: one pattern
+
+    assert total == 216
+    rare = {"20": Fraction(1, 216)} | dict.fromkeys(
+        ["1", "21", "55", "56", "57"],
+        Fraction(1, 108),
+    )
+    expected = {cid: rare.get(cid, Fraction(1, 54)) for cid in weights}
+    assert {cid: Fraction(w, total) for cid, w in weights.items()} == expected
 
 
 def test_realistic_picks_follow_the_weights() -> None:

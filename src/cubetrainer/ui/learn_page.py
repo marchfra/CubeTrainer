@@ -23,7 +23,7 @@ from cubetrainer.formatting import format_average, format_value
 from cubetrainer.ui.case_images import case_pixmap
 
 #: Case sets offered in the set picker, by id.
-AVAILABLE_SETS: tuple[str, ...] = ("pll",)
+AVAILABLE_SETS: tuple[str, ...] = ("oll", "pll")
 
 #: Background colour behind a case image for each status ("" means none).
 STATUS_COLORS: dict[CaseStatus, str] = {

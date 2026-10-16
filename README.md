@@ -1,8 +1,8 @@
 # CubeTrainer
 
 A desktop app for speedcubing practice: a [cstimer](https://cstimer.net)-style timer
-for full solves plus (in progress) a [jperm](https://jperm.net)-style OLL/PLL
-algorithm trainer. Built with Python and PySide6.
+for full solves plus a [jperm](https://jperm.net)-style OLL/PLL algorithm trainer.
+Built with Python and PySide6.
 
 ## Features
 
@@ -29,22 +29,27 @@ and averages and means are rounded to the nearest hundredth.
 
 **Learn tab**
 
-- The 21 PLL cases, jperm-style: image, name, default algorithm (grouped into
-  blocks with brackets), group, and best / average trainer times.
-- Case images are drawn from the algorithm itself (yellow top, green front), with
-  arrows showing how the pieces move; a final AUF in the algorithm is ignored.
+- Two sets, chosen with the *Set* picker: the 57 OLL cases and the 21 PLL cases,
+  jperm-style: image, name, default algorithm (grouped into blocks with
+  brackets), group, and best / average trainer times. The OLL numbering is
+  cross-checked in the tests against the SpeedSolving wiki's algorithms.
+- Case images are drawn from the algorithm itself (yellow top, green front). PLL
+  images show the colours and arrows for how the pieces move (a final AUF in the
+  algorithm is ignored); OLL images show which stickers are yellow, the rest grey.
 - Click a case image to cycle its status: unlearned → learning → finished (shown as
   the image's background colour, and named on hover). Statuses are saved.
 
-**Trainer** (Learn → *Train PLL*)
+**Trainer** (Learn → *Train OLL* / *Train PLL*)
 
-- Opens in the Timer tab (← *Full timer* goes back). Each scramble sets up a PLL
-  case, with random U turns before and after it. Scrambles are random-state style,
-  so they don't give away the algorithm.
+- Opens in the Timer tab (← *Full timer* goes back). Each scramble sets up a case
+  of the set, with random U turns around it; OLL scrambles also randomly permute
+  the pieces, as in a real solve. Scrambles are random-state style, so they don't
+  give away the algorithm.
 - **Case filter** (the *N cases · equal ▾* button): choose groups and learning
   statuses (a case must match both), and whether cases come up with equal
   probability or with their real-solve frequency (*realistic*: in PLL, H/Na/Nb are
-  1/72, E/Z 1/36, the rest 1/18). The filter is saved per set; if status changes
+  1/72, E/Z 1/36, the rest 1/18; in OLL, 20 is 1/216, 1/21/55/56/57 are 1/108, the
+  rest 1/54). The filter is saved per set; if status changes
   leave nothing selected, the trainer falls back to all cases and says so.
 - The solves table has a case column, and the solve dialog shows the case's name
   and image. The case is recognised from the scramble itself.
@@ -122,10 +127,10 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
         render.py          top-down last-layer images
       cases/
         catalog.py         case sets, cases, learning status
-        recognition.py     identify PLL cases regardless of AUF
+        recognition.py     identify OLL / PLL cases regardless of AUF
         trainer.py         case scrambles and recognising them
         filters.py         case filter and case probabilities
-        data/pll.json      bundled PLL cases and default algorithms
+        data/              bundled OLL and PLL cases and default algorithms
       ui/                  Qt widgets: main window, timer/trainer/learn pages, dialogs
     tests/                 pytest + pytest-qt
 

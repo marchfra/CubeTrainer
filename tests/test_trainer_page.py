@@ -125,6 +125,7 @@ def test_train_button_opens_trainer_and_back_returns(qtbot: QtBot) -> None:
     qtbot.addWidget(window)
     window.show()
     window.tabs.setCurrentWidget(window.learn_page)
+    window.learn_page.select_set("pll")
 
     assert window.learn_page.train_button.text() == "Train PLL"
     qtbot.mouseClick(window.learn_page.train_button, Qt.MouseButton.LeftButton)
@@ -386,6 +387,7 @@ def test_learn_page_shows_trainer_times(qtbot: QtBot, clock: FakeClock) -> None:
     do_solve(qtbot, trainer, clock, 9_000)
     trainer.toggle_mistake()  # the 9.00 is a mistake: left out
 
+    window.learn_page.select_set("pll")
     window.tabs.setCurrentWidget(window.learn_page)
 
     cards = window.learn_page.case_list
@@ -459,3 +461,23 @@ def test_filter_button_warns_when_nothing_matches(qtbot: QtBot) -> None:
     page.show()  # showing the page again refreshes the button
 
     assert page.filter_button.text() == "No case matches: all 21 · equal  ▾"
+
+
+def test_oll_trainer_recognises_and_hints(qtbot: QtBot, clock: FakeClock) -> None:
+    """The OLL trainer records the case of its scrambles and shows its hints."""
+    window = MainWindow(Database(":memory:"))
+    qtbot.addWidget(window)
+    window.show()
+    window.learn_page.select_set("oll")
+    assert window.learn_page.train_button.text() == "Train OLL"
+
+    qtbot.mouseClick(window.learn_page.train_button, Qt.MouseButton.LeftButton)
+
+    trainer = window.trainer_pages["oll"]
+    assert trainer.title.text() == "OLL trainer"
+    assert trainer.filter_button.text() == "57 cases · equal  ▾"
+    trainer.timer._clock = clock
+    trainer.show_next_hint()
+    assert trainer.hints_shown == 1
+    do_solve(qtbot, trainer, clock, 2_000)
+    assert trainer.solves.solves[-1].case_id is not None

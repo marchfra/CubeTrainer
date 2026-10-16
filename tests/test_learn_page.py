@@ -11,7 +11,7 @@ from cubetrainer.ui.learn_page import STATUS_COLORS, LearnPage
 
 
 def make_page(qtbot: QtBot, db: Database) -> LearnPage:
-    """Create and show a Learn page.
+    """Create and show a Learn page, showing the PLL set.
 
     Args:
         qtbot: pytest-qt helper.
@@ -24,6 +24,7 @@ def make_page(qtbot: QtBot, db: Database) -> LearnPage:
     page = LearnPage(db)
     qtbot.addWidget(page)
     page.show()
+    page.select_set("pll")
     return page
 
 
@@ -32,7 +33,7 @@ def test_lists_all_pll_cases(qtbot: QtBot) -> None:
     page = make_page(qtbot, Database(":memory:"))
 
     assert page.set_picker.text() == "PLL  ▾"
-    assert [a.text() for a in page.set_menu.actions()] == ["PLL"]
+    assert [a.text() for a in page.set_menu.actions()] == ["OLL", "PLL"]
     assert len(page.case_list.images) == 21
     assert set(page.case_list.statuses.values()) == {CaseStatus.UNLEARNED}
 
@@ -113,9 +114,10 @@ def test_selecting_a_set_relabels_buttons(qtbot: QtBot) -> None:
 
     page.set_menu.actions()[0].trigger()
 
-    assert page.set_picker.text() == "PLL  ▾"
-    assert page.train_button.text() == "Train PLL"
-    assert page.case_list.case_set.id == "pll"
+    assert page.set_picker.text() == "OLL  ▾"
+    assert page.train_button.text() == "Train OLL"
+    assert page.case_list.case_set.id == "oll"
+    assert len(page.case_list.images) == 57
 
 
 def test_times_are_vertically_centred(qtbot: QtBot) -> None:

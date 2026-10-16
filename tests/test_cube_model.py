@@ -186,3 +186,12 @@ def test_reveal_alg_rejects_invalid_notation() -> None:
     """Invalid algorithms raise, as with parse_alg."""
     with pytest.raises(AlgorithmParseError):
         reveal_alg("(R Q)", 1)
+
+
+def test_followed_by_composes_move_sequences() -> None:
+    """Combining two states is the same as doing both move sequences in order."""
+    first, second = parse_alg("R U F' x D2"), parse_alg("L' B M2 y r")
+
+    combined = SOLVED.apply(first).followed_by(SOLVED.apply(second))
+
+    assert combined == SOLVED.apply(first + second)
