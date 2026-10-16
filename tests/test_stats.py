@@ -180,3 +180,18 @@ def test_sub_x_rate() -> None:
     assert stats.sub_x_rate(values, 10_000) == 0.25
     assert stats.sub_x_rate(values, 10_001) == 0.5
     assert stats.sub_x_rate([], 10_000) is None
+
+
+def test_records_of_singles() -> None:
+    """Each new best single is a record; DNFs and ties never are."""
+    values = [12_000.0, 11_000.0, DNF, 11_000.0, 9_000.0]
+
+    assert stats.records(values) == [(0, 12_000), (1, 11_000), (4, 9_000)]
+
+
+def test_records_of_averages() -> None:
+    """Records of ao3 start once there are three results and improve stepwise."""
+    values = [10.0, 9.0, 8.0, 12.0, 7.0, 6.0, 5.0]
+
+    assert stats.records(values, 3) == [(2, 9.0), (4, 8.0), (5, 7.0), (6, 6.0)]
+    assert stats.records([DNF, DNF], 1) == []

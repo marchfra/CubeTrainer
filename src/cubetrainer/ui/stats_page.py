@@ -12,12 +12,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QShowEvent
 from PySide6.QtWidgets import (
     QDoubleSpinBox,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QMenu,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -29,6 +31,7 @@ from cubetrainer.formatting import format_average, format_percent, format_value
 from cubetrainer.solves import Solve
 from cubetrainer.ui.distribution_plots import DistributionPlots
 from cubetrainer.ui.learn_page import AVAILABLE_SETS
+from cubetrainer.ui.record_plots import RecordPlots
 from cubetrainer.ui.sizing import reserve_width
 
 #: Shown for an option that covers everything (sessions or cases).
@@ -154,11 +157,12 @@ class StatsPage(QWidget):
         sub_x_label: The sub-X rate.
         distribution: Histogram with the fit and the cumulative distribution.
         fit_labels: Values of the ex-Gaussian fit, keyed by μ, σ, τ and D.
+        record_plots: Q-Q check of the fit and personal-best progression.
 
     """
 
     def __init__(self, db: Database, parent: QWidget | None = None) -> None:
-        """Create the page, showing the full timer's current session.
+        """Create the page for the full timer's current session (drawn when shown).
 
         Args:
             db: The app database.
@@ -205,8 +209,16 @@ class StatsPage(QWidget):
                 self._case_label = label
         top.addStretch()
 
-        layout = QVBoxLayout(self)
-        layout.addLayout(top)
+        # Everything below the pickers scrolls: the page is taller than the window.
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(content)
+        page = QVBoxLayout(self)
+        page.addLayout(top)
+        page.addWidget(scroll, stretch=1)
         boxes = QHBoxLayout()
         boxes.addWidget(self._build_overview())
         boxes.addWidget(self._build_averages())
@@ -216,8 +228,11 @@ class StatsPage(QWidget):
         layout.addLayout(boxes)
         self.distribution: DistributionPlots = DistributionPlots()
         layout.addWidget(self.distribution)
+        self.record_plots: RecordPlots = RecordPlots()
+        layout.addWidget(self.record_plots)
         layout.addStretch()
-        self.refresh()
+        # No refresh yet: the page fills in when it's first shown (see showEvent),
+        # so the app doesn't compute and draw statistics for a tab nobody opened.
 
     def _build_overview(self) -> QGroupBox:
         """Create the overview box: counts, best, worst, mean, spread, percentiles.
@@ -415,6 +430,7 @@ class StatsPage(QWidget):
             self.averages[n, "current"].setText(format_average(current))
             self.averages[n, "best"].setText(format_average(best))
         self.distribution.set_values(values)
+        self.record_plots.set_solves(solves)
         self._show_fit()
         rate = stats.sub_x_rate(values, self.sub_x.value() * 1000)
         if rate is None:

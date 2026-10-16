@@ -41,8 +41,8 @@ PLOTS_HEIGHT: int = 340
 _MAX_BINS: int = 40
 
 #: Colour of the observed data (a neutral grey), for light and dark mode.
-_DATA_LIGHT: str = "#a9a7a0"
-_DATA_DARK: str = "#77756f"
+DATA_LIGHT: str = "#a9a7a0"
+DATA_DARK: str = "#77756f"
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +61,7 @@ class Bar:
     count: int
 
 
-def _style_axes(axes: Axes, colors: GraphColors, surface: str) -> None:
+def style_axes(axes: Axes, colors: GraphColors, surface: str) -> None:
     """Give a plot the recessive look: hairline grid, muted ticks, no box.
 
     Args:
@@ -82,7 +82,7 @@ def _style_axes(axes: Axes, colors: GraphColors, surface: str) -> None:
     axes.xaxis.set_major_formatter(FuncFormatter(lambda v, _p: f"{v:g}"))
 
 
-def _title(axes: Axes, text: str, colors: GraphColors) -> None:
+def title_axes(axes: Axes, text: str, colors: GraphColors) -> None:
     """Title a plot in the text ink.
 
     Args:
@@ -131,7 +131,8 @@ class DistributionPlots(QWidget):
         box = QHBoxLayout(self)
         box.setContentsMargins(0, 0, 0, 0)
         box.addWidget(self.canvas)
-        self.set_values([])
+        # Drawn on the first set_values, not here: that keeps building the
+        # (hidden) Stats tab cheap.
 
     def set_values(self, values: Sequence[float]) -> None:
         """Show the distribution of some results.
@@ -163,7 +164,7 @@ class DistributionPlots(QWidget):
         else:
             histogram, cumulative = self.figure.subplots(1, 2)
             self._histogram, self._cumulative = histogram, cumulative
-            data = _DATA_DARK if colors is DARK else _DATA_LIGHT
+            data = DATA_DARK if colors is DARK else DATA_LIGHT
             self._draw_histogram(histogram, colors, surface, data)
             self._draw_cumulative(cumulative, colors, surface, data)
         self.canvas.draw_idle()
@@ -206,8 +207,8 @@ class DistributionPlots(QWidget):
             data: Colour of the bars.
 
         """
-        _style_axes(axes, colors, surface)
-        _title(axes, "Distribution of times", colors)
+        style_axes(axes, colors, surface)
+        title_axes(axes, "Distribution of times", colors)
         times = np.array(self.seconds)
         edges = np.histogram_bin_edges(times, bins="fd")
         if edges.size - 1 > _MAX_BINS:
@@ -258,8 +259,8 @@ class DistributionPlots(QWidget):
             data: Colour of the observed curve.
 
         """
-        _style_axes(axes, colors, surface)
-        _title(axes, "Share of solves under a time", colors)
+        style_axes(axes, colors, surface)
+        title_axes(axes, "Share of solves under a time", colors)
         times, shares = empirical_cdf(self.seconds)
         axes.step(
             times,

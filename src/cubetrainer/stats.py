@@ -290,3 +290,25 @@ def sub_x_rate(values: Sequence[float], limit_ms: float) -> float | None:
     if not values:
         return None
     return sum(v < limit_ms for v in values) / len(values)
+
+
+def records(values: Sequence[float], n: int = 1) -> list[tuple[int, float]]:
+    """Find every new personal best, of single times or of averages of ``n``.
+
+    Args:
+        values: Results, oldest first (``math.inf`` for DNF).
+        n: 1 for singles, otherwise the size of the average (e.g. 5 for ao5).
+
+    Returns:
+        ``(index, value)`` for each result (or average ending at that index) that
+        beat every earlier one; DNFs never set a record.
+
+    """
+    series: Sequence[float | None] = values if n == 1 else rolling_averages(values, n)
+    found: list[tuple[int, float]] = []
+    best = math.inf
+    for index, value in enumerate(series):
+        if value is not None and value < best:
+            best = value
+            found.append((index, value))
+    return found

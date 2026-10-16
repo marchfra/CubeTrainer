@@ -109,7 +109,12 @@ and averages and means are rounded to the nearest hundredth.
 - **Distribution:** a histogram of your times with the fitted curve, and the share
   of solves under each time (observed and fitted). Hover for bar counts and
   shares.
-- More plots: coming next.
+- **Fit check (Q-Q plot):** each of your times against the time the model expects
+  at the same rank. On the diagonal: the model describes you well; above it at
+  the right: your slow solves are worse than the model expects.
+- **Personal bests over time:** every new best single and best ao5, carried on to
+  your latest solve. Hover for the record and when it was set.
+- The tab only computes and draws when you open it.
 
 ## Requirements
 

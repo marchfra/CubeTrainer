@@ -189,3 +189,13 @@ def test_distribution_plots_follow_the_selection(qtbot: QtBot) -> None:
     assert page.distribution.fit is not None
     assert page.fit_labels["μ"].text() == f"{page.distribution.fit.mu:.2f}"
     assert page.fit_labels["D"].text() != "-"
+
+
+def test_record_plots_follow_the_selection(qtbot: QtBot) -> None:
+    """The Q-Q and records plots get the same solves as the summary."""
+    db = Database(":memory:")
+    add(db, DbSessionStore(db, TIMER_KIND).current(), *range(10_000, 22_000, 1_000))
+    page = make_page(qtbot, db)
+
+    assert page.record_plots.observed.size == 12
+    assert page.record_plots.records["single"][0][1] == 10_000
