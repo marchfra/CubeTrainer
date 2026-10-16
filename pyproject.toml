@@ -15,6 +15,7 @@ dependencies = [
     "numpy>=2.5.4",
     "platformdirs>=4.13.0",
     "pyside6>=6.12.0",
+    "scipy>=1.18.1",
 ]
 
 [project.scripts]
@@ -35,6 +36,10 @@ dev = [
 [tool.ruff]
 # A project-level ruff config replaces the global one, so extend it explicitly.
 extend = "~/.config/ruff/ruff.toml"
+
+[tool.ruff.lint]
+# Greek letters are the standard names of distribution parameters (σ, μ, τ).
+allowed-confusables = ["σ"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [

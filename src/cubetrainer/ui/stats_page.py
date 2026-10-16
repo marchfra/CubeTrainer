@@ -27,6 +27,7 @@ from cubetrainer.cases.catalog import load_case_set
 from cubetrainer.db import TIMER_KIND, Database, DbSessionStore, trainer_session_kind
 from cubetrainer.formatting import format_average, format_percent, format_value
 from cubetrainer.solves import Solve
+from cubetrainer.ui.distribution_plots import DistributionPlots
 from cubetrainer.ui.learn_page import AVAILABLE_SETS
 from cubetrainer.ui.sizing import reserve_width
 
@@ -151,6 +152,8 @@ class StatsPage(QWidget):
         overview: Value labels of the overview, keyed by row name.
         averages: Value labels of the averages, keyed by ``(n, "current" | "best")``.
         sub_x_label: The sub-X rate.
+        distribution: Histogram with the fit and the cumulative distribution.
+        fit_labels: Values of the ex-Gaussian fit, keyed by μ, σ, τ and D.
 
     """
 
@@ -208,8 +211,11 @@ class StatsPage(QWidget):
         boxes.addWidget(self._build_overview())
         boxes.addWidget(self._build_averages())
         boxes.addWidget(self._build_sub_x())
+        boxes.addWidget(self._build_fit())
         boxes.addStretch()
         layout.addLayout(boxes)
+        self.distribution: DistributionPlots = DistributionPlots()
+        layout.addWidget(self.distribution)
         layout.addStretch()
         self.refresh()
 
@@ -284,6 +290,52 @@ class StatsPage(QWidget):
         grid.addWidget(self.sub_x_label, 1, 0, 1, 2)
         grid.setRowStretch(2, 1)
         return box
+
+    def _build_fit(self) -> QGroupBox:
+        """Create the fit box: the ex-Gaussian's parameters, explained.
+
+        Returns:
+            The box.
+
+        """
+        box = QGroupBox("Ex-Gaussian fit")
+        grid = QGridLayout(box)
+        self.fit_labels: dict[str, QLabel] = {}
+        rows = [
+            ("μ", "typical clean solve"),
+            ("σ", "consistency of clean solves"),
+            ("τ", "tail of bad solves"),
+            ("D", "fit quality (smaller is better)"),
+        ]
+        for row, (symbol, meaning) in enumerate(rows):
+            grid.addWidget(QLabel(symbol), row, 0)
+            grid.addWidget(QLabel(meaning), row, 1)
+            self.fit_labels[symbol] = _value_label()
+            grid.addWidget(self.fit_labels[symbol], row, 2)
+        grid.setColumnMinimumWidth(2, 60)
+        grid.setRowStretch(len(rows), 1)
+        box.setToolTip(
+            "Solve times are modelled as a normal distribution (μ, σ) plus an "
+            "exponential tail (τ). A high τ means occasional disasters cost you "
+            "most; a high σ means every solve varies.",
+        )
+        return box
+
+    def _show_fit(self) -> None:
+        """Show the ex-Gaussian parameters of the plotted times."""
+        fit = self.distribution.fit
+        texts = (
+            {"μ": "-", "σ": "-", "τ": "-", "D": "-"}
+            if fit is None
+            else {
+                "μ": f"{fit.mu:.2f}",
+                "σ": f"{fit.sigma:.2f}",
+                "τ": f"{fit.tau:.2f}",
+                "D": f"{fit.ks:.2f}",
+            }
+        )
+        for symbol, text in texts.items():
+            self.fit_labels[symbol].setText(text)
 
     def select_source(self, source: Source) -> None:
         """Show another source, starting from its current session and all cases.
@@ -362,6 +414,8 @@ class StatsPage(QWidget):
         for n, (current, best) in summary.averages.items():
             self.averages[n, "current"].setText(format_average(current))
             self.averages[n, "best"].setText(format_average(best))
+        self.distribution.set_values(values)
+        self._show_fit()
         rate = stats.sub_x_rate(values, self.sub_x.value() * 1000)
         if rate is None:
             self.sub_x_label.setText("-")

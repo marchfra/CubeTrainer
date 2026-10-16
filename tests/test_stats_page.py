@@ -127,6 +127,7 @@ def test_empty_source_shows_dashes(qtbot: QtBot) -> None:
     assert page.overview["mean"].text() == "-"
     assert page.overview["variation (CV)"].text() == "-"
     assert page.sub_x_label.text() == "-"
+    assert page.fit_labels["τ"].text() == "-"
 
 
 def test_menus_list_sources_sessions_and_cases(qtbot: QtBot) -> None:
@@ -170,3 +171,21 @@ def test_plus_two_counts_in_times(qtbot: QtBot) -> None:
     page = make_page(qtbot, db)
 
     assert page.overview["best"].text() == "12.00"
+
+
+def test_distribution_plots_follow_the_selection(qtbot: QtBot) -> None:
+    """The plots show the selected solves (trainer mistakes left out)."""
+    db = Database(":memory:")
+    session = DbSessionStore(db, trainer_session_kind("pll")).current()
+    add(db, session, *range(2_000, 4_400, 200), case_id="T")
+    add(db, session, 30_000, case_id="T", mistake=True)
+    page = make_page(qtbot, db)
+    assert page.distribution.seconds == []
+
+    page.select_source(next(s for s in all_sources() if s.set_id == "pll"))
+
+    assert len(page.distribution.seconds) == 12
+    assert max(page.distribution.seconds) < 30
+    assert page.distribution.fit is not None
+    assert page.fit_labels["μ"].text() == f"{page.distribution.fit.mu:.2f}"
+    assert page.fit_labels["D"].text() != "-"

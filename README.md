@@ -102,7 +102,14 @@ and averages and means are rounded to the nearest hundredth.
   variation (CV: std / mean, lower is more consistent), 10th and 90th percentile.
 - **Averages:** current and best ao5, ao12, ao50 and ao100.
 - **Sub-X:** the share of solves under a time you choose.
-- Plots: coming next.
+- **Ex-Gaussian fit:** solve times are modelled as a normal distribution plus an
+  exponential tail. μ is your typical clean solve, σ how consistent clean solves
+  are, τ how big your tail of bad solves is; D (Kolmogorov-Smirnov) says how well
+  the model fits (smaller is better).
+- **Distribution:** a histogram of your times with the fitted curve, and the share
+  of solves under each time (observed and fitted). Hover for bar counts and
+  shares.
+- More plots: coming next.
 
 ## Requirements
 
@@ -154,7 +161,8 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
       settings.py          key-value settings
       sessions.py          sessions (in memory; the database version is in db.py)
       solves.py            Solve, Penalty, SolveList
-      stats.py             averages, means, bests
+      stats.py             averages, means, bests, summary
+      fits.py              ex-Gaussian fit (scipy)
       formatting.py        time / solve display strings
       scramble_history.py  ◀ / ▶ scramble history
       db.py                SQLite storage and migrations
