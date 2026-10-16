@@ -246,6 +246,82 @@ def format_alg(moves: Iterable[Move]) -> str:
     return " ".join(str(m) for m in moves)
 
 
+_OPENING: str = "(["
+_CLOSING: str = ")]"
+_DISPLAY_TOKEN_RE = re.compile(
+    r"[()\[\]]|(?:[URFDLB]w|[URFDLBurfdlbMESxyz])(?:2'|2|'|)",
+)
+
+
+def _display_tokens(text: str) -> list[str]:
+    """Split an algorithm into move tokens and brackets, keeping the user's notation.
+
+    Args:
+        text: A valid algorithm, possibly with ``(...)`` or ``[...]`` groups.
+
+    Returns:
+        The tokens, e.g. ``["(", "R", "U", "R'", ")", "Rw2"]``.
+
+    Raises:
+        AlgorithmParseError: If the text isn't valid notation.
+
+    """
+    parse_alg(text)  # validates
+    return _DISPLAY_TOKEN_RE.findall(re.sub(r"\s+", "", text))
+
+
+def _join_tokens(tokens: Sequence[str]) -> str:
+    """Join tokens with spaces, tight against brackets: ``"(R U) F"``.
+
+    Args:
+        tokens: Move tokens and brackets.
+
+    Returns:
+        The formatted text.
+
+    """
+    text = ""
+    for token in tokens:
+        tight = token in _CLOSING or (text and text[-1] in _OPENING)
+        text += token if tight or not text else f" {token}"
+    return text
+
+
+def reveal_alg(text: str, moves: int) -> str:
+    """Show the first ``moves`` moves of an algorithm, keeping its brackets.
+
+    Brackets don't count as moves: an opening bracket appears with the first move
+    inside it, a closing one with the last. So for ``"(R U R' U') F"`` and 1, 4 and 5
+    moves this gives ``"(R"``, ``"(R U R' U')"`` and ``"(R U R' U') F"``.
+
+    Args:
+        text: A valid algorithm, possibly with ``(...)`` or ``[...]`` groups.
+        moves: How many moves to show.
+
+    Returns:
+        The shown part of the algorithm (the whole of it if ``moves`` is enough).
+
+    """
+    tokens = _display_tokens(text)
+    shown: list[str] = []
+    pending: list[str] = []  # opening brackets waiting for their first move
+    count = 0
+    for token in tokens:
+        if token in _OPENING:
+            pending.append(token)
+        elif token in _CLOSING:
+            if count <= moves:
+                shown.append(token)
+        else:
+            count += 1
+            if count > moves:
+                break
+            shown.extend(pending)
+            pending.clear()
+            shown.append(token)
+    return _join_tokens(shown)
+
+
 def invert_alg(moves: Sequence[Move]) -> list[Move]:
     """Return the algorithm that undoes ``moves``.
 

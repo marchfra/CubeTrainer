@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
@@ -56,8 +56,12 @@ class ScrambleBar(QWidget):
         prev_button: Goes back to the previous scramble.
         next_button: Goes forward, generating a new scramble at the end.
         copy_button: Copies the scramble to the clipboard.
+        scramble_changed: Emitted with the scramble each time one is shown, new or
+            browsed to.
 
     """
+
+    scramble_changed = Signal(str)
 
     def __init__(
         self,
@@ -136,3 +140,6 @@ class ScrambleBar(QWidget):
         """Refresh the label and button states from the history."""
         self.label.setText(self.scramble)
         self.prev_button.setEnabled(self.history.can_go_back)
+        # Emitted even if the text is the same: two consecutive trainer scrambles can
+        # be identical, and listeners (e.g. hints) still need to reset.
+        self.scramble_changed.emit(self.scramble)

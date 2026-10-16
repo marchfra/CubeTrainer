@@ -9,6 +9,7 @@ from cubetrainer.cube.model import (
     format_alg,
     invert_alg,
     parse_alg,
+    reveal_alg,
     state_solved_by,
 )
 
@@ -152,3 +153,36 @@ def test_state_solved_by_aufs_are_in_standard_orientation() -> None:
 
     # Solved by: before, the alg, rotating back (x'), then after.
     assert state.apply([*before, *moves, *parse_alg("x'"), *after]) == SOLVED
+
+
+@pytest.mark.parametrize(
+    ("moves", "shown"),
+    [
+        (0, ""),
+        (1, "(R"),
+        (3, "(R U R'"),
+        (4, "(R U R' U')"),
+        (5, "(R U R' U') F"),
+        (7, "(R U R' U') F L F'"),
+        (99, "(R U R' U') F L F'"),
+    ],
+)
+def test_reveal_alg_keeps_brackets_without_counting_them(
+    moves: int,
+    shown: str,
+) -> None:
+    """Brackets open with their first move and close with their last."""
+    assert reveal_alg("(R U R' U') F L F'", moves) == shown
+
+
+def test_reveal_alg_keeps_the_written_notation() -> None:
+    """Moves are shown as typed (Rw, R2'), with square brackets and odd spacing."""
+    assert reveal_alg("x [ Rw2'  U ]R ( M' )", 5) == "x [Rw2' U] R (M')"
+    assert reveal_alg("x [ Rw2'  U ]R ( M' )", 4) == "x [Rw2' U] R"
+    assert reveal_alg("x [ Rw2'  U ]R ( M' )", 2) == "x [Rw2'"
+
+
+def test_reveal_alg_rejects_invalid_notation() -> None:
+    """Invalid algorithms raise, as with parse_alg."""
+    with pytest.raises(AlgorithmParseError):
+        reveal_alg("(R Q)", 1)

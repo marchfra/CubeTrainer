@@ -125,3 +125,13 @@ def test_status_cycle() -> None:
     assert CaseStatus.UNLEARNED.next() is CaseStatus.LEARNING
     assert CaseStatus.LEARNING.next() is CaseStatus.FINISHED
     assert CaseStatus.FINISHED.next() is CaseStatus.UNLEARNED
+
+
+def test_default_algs_use_balanced_brackets() -> None:
+    """Groups in the bundled algorithms are well formed: no stray or nested brackets."""
+    for case in PLL.cases:
+        depth = 0
+        for char in case.alg:
+            depth += {"(": 1, ")": -1}.get(char, 0)
+            assert depth in {0, 1}, case.id
+        assert depth == 0, case.id

@@ -6,11 +6,15 @@ from typing import override
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from cubetrainer.cases.catalog import Case, CaseSet
-from cubetrainer.cases.trainer import CaseRecognizer, uniform_case_scrambles
+from cubetrainer.cases.trainer import (
+    CaseRecognizer,
+    uniform_case_scrambles,
+)
+from cubetrainer.cube.model import parse_alg, reveal_alg
 from cubetrainer.solves import Solve, SolveList
 from cubetrainer.ui.case_images import CaseInfo, case_pixmap
 from cubetrainer.ui.solves_panel import TRAINER_LAYOUT, PanelLayout
@@ -18,6 +22,73 @@ from cubetrainer.ui.timer_page import TimerPage
 
 #: Size of the case image in the solve dialog, in logical pixels.
 DIALOG_IMAGE_SIZE: int = 160
+
+#: Size of the case image in the hint panel, in logical pixels.
+HINT_IMAGE_SIZE: int = 120
+
+#: Shortcut revealing the next hint step.
+HINT_SHORTCUT: str = "Right"
+
+#: Shown in the hint panel before any hint is revealed.
+HINT_PROMPT: str = "Press → for a hint"
+
+
+class HintPanel(QWidget):
+    """Shows the case image and the first few moves of its algorithm.
+
+    Attributes:
+        image: The case image (empty until the first hint).
+        moves: The revealed moves, or a prompt before the first hint.
+
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        """Create an empty panel showing the prompt.
+
+        Args:
+            parent: Optional parent widget.
+
+        """
+        super().__init__(parent)
+        self.image: QLabel = QLabel()
+        self.image.setFixedSize(HINT_IMAGE_SIZE, HINT_IMAGE_SIZE)
+        self.moves: QLabel = QLabel()
+        font = QFont()
+        font.setPointSize(22)
+        self.moves.setFont(font)
+        self.moves.setWordWrap(True)
+        box = QHBoxLayout(self)
+        box.addStretch()
+        box.addWidget(self.image)
+        box.addWidget(self.moves)
+        box.addStretch()
+        self.clear()
+
+    def clear(self) -> None:
+        """Hide the hint, showing only the prompt.
+
+        The (empty) image keeps its space, so the timer below doesn't move when the
+        first hint appears.
+        """
+        self.image.clear()
+        self.moves.setText(HINT_PROMPT)
+
+    def show_hint(self, image: QPixmap, alg: str, revealed: int) -> None:
+        """Show the case image and the first ``revealed`` moves of its algorithm.
+
+        Brackets in the algorithm are kept but aren't moves: ``"(R U R' U') F"`` with
+        one move revealed shows ``"(R"``.
+
+        Args:
+            image: The case image.
+            alg: The algorithm, as written.
+            revealed: How many moves to show.
+
+        """
+        self.image.setPixmap(image)
+        hidden = len(parse_alg(alg)) - revealed
+        more = f"   (+{hidden} more)" if hidden > 0 else ""
+        self.moves.setText(reveal_alg(alg, revealed) + more)
 
 
 class TrainerPage(TimerPage):
@@ -28,6 +99,8 @@ class TrainerPage(TimerPage):
         case_set: The set being trained.
         title: Header naming the set.
         back_button: Returns to the full timer.
+        hint_panel: Shows the hints for the current scramble.
+        hints_shown: How many hint steps have been revealed for the current scramble.
         PANEL_LAYOUT: The trainer table, with a case column.
 
     """
@@ -79,6 +152,42 @@ class TrainerPage(TimerPage):
         header.addWidget(self.back_button)
         self.right_column.insertLayout(0, header)
 
+        self.hints_shown: int = 0
+        self._hint_alg: str = ""
+        self._hint_length: int = 0
+        self._hint_image: QPixmap = QPixmap()
+        self.hint_panel: HintPanel = HintPanel()
+        # Between the scramble bar and the timer.
+        self.right_column.insertWidget(2, self.hint_panel)
+        self.scramble_bar.scramble_changed.connect(self._reset_hints)
+        # A shortcut fires before the timer sees the key press, so → never stops a
+        # running solve: a hint can be asked for mid-solve.
+        self._add_shortcut(HINT_SHORTCUT, self.show_next_hint)
+
+    def show_next_hint(self) -> None:
+        """Reveal one more hint step: the case image and first move, then a move more.
+
+        The moves are the case's algorithm as written, starting from the case as the
+        image shows it; turning the U layer to match the image is left to the user.
+        Brackets in the algorithm are shown but don't count as steps.
+        Does nothing if the current scramble isn't one of the set's cases.
+        """
+        if not self._hint_alg:
+            case = self._recognizer.recognize(self.scramble_bar.scramble)
+            if case is None:
+                return
+            self._hint_alg = case.alg
+            self._hint_length = len(parse_alg(case.alg))
+            self._hint_image = case_pixmap(case, HINT_IMAGE_SIZE)
+        self.hints_shown = min(self.hints_shown + 1, self._hint_length)
+        self.hint_panel.show_hint(self._hint_image, self._hint_alg, self.hints_shown)
+
+    def _reset_hints(self) -> None:
+        """Forget the hints when a different scramble is shown."""
+        self.hints_shown = 0
+        self._hint_alg = ""
+        self.hint_panel.clear()
+
     @override
     def case_name(self, case_id: str) -> str:
         """Return the display name of one of the set's cases.
@@ -118,7 +227,8 @@ class TrainerPage(TimerPage):
             scramble: The scramble shown when the solve started.
 
         Returns:
-            The new solve, with ``case_id`` set when the case is recognised.
+            The new solve, with ``case_id`` set when the case is recognised and the
+            number of hint steps revealed for it.
 
         """
         case = self._recognizer.recognize(scramble)
@@ -126,4 +236,5 @@ class TrainerPage(TimerPage):
             time_ms=time_ms,
             scramble=scramble,
             case_id=case.id if case else None,
+            hints=self.hints_shown,
         )

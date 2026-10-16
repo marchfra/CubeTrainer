@@ -210,3 +210,11 @@ def test_case_id_round_trip(db: Database) -> None:
     db.add_solve(session, Solve(2_000, "R U"))
 
     assert [s.case_id for s in db.load_solves(session)] == ["T", None]
+
+
+def test_hints_round_trip(db: Database) -> None:
+    """The number of hints revealed is stored with a trainer solve."""
+    session = db.get_or_create_session("trainer:pll")
+    db.add_solve(session, Solve(1_000, "R U", case_id="T", hints=4))
+
+    assert [s.hints for s in db.load_solves(session)] == [4]

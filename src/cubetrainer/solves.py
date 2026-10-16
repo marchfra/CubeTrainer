@@ -28,6 +28,7 @@ class Solve:
         created_at: When the solve finished (timezone-aware, UTC).
         id: Database id, or None if the solve hasn't been stored.
         case_id: For trainer solves, the case that was scrambled; None for full solves.
+        hints: For trainer solves, how many hint steps were revealed.
 
     """
 
@@ -37,6 +38,7 @@ class Solve:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     id: int | None = None
     case_id: str | None = None
+    hints: int = 0
 
     @property
     def value(self) -> float:

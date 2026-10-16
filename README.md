@@ -20,6 +20,7 @@ algorithm trainer. Built with Python and PySide6.
 |---|---|
 | ⌘1 / ⌘2 / ⌘3 | Mark the last solve OK / +2 / DNF |
 | ⌘Z | Delete the last solve (asks first) |
+| → | Trainer only: reveal the next hint step |
 
 Statistics follow cstimer and the WCA regulations: averages trim 5% (rounded up) from
 each end, a DNF counts as the worst result, single times are truncated to hundredths
@@ -27,7 +28,8 @@ and averages and means are rounded to the nearest hundredth.
 
 **Learn tab**
 
-- The 21 PLL cases, jperm-style: image, name, default algorithm and group.
+- The 21 PLL cases, jperm-style: image, name, default algorithm (grouped into
+  blocks with brackets) and group.
 - Case images are drawn from the algorithm itself (yellow top, green front), with
   arrows showing how the pieces move; a final AUF in the algorithm is ignored.
 - Click a case image to cycle its status: unlearned → learning → finished (shown as
@@ -41,6 +43,12 @@ and averages and means are rounded to the nearest hundredth.
 - The solves table has a case column, and the solve dialog shows the case's name
   and image. The case is recognised from the scramble itself.
 - Trainer solves are stored in their own session, separate from full solves.
+- **Hints:** press → to show the case image and the first move of its algorithm;
+  each further → reveals one more move. The moves start from the case as the image
+  shows it, so turn the U layer to match the image first. Brackets that group an
+  algorithm into blocks, like `(R U R' U')`, are shown but don't count as steps. →
+  works before and during a solve and never stops the timer. The number of hint steps used is saved with the
+  solve.
 - The same shortcuts work (⌘1/⌘2/⌘3, ⌘Z). No inspection.
 
 **Stats** tab: coming soon.

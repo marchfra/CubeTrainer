@@ -63,6 +63,9 @@ MIGRATIONS: tuple[str, ...] = (
     """
     ALTER TABLE solves ADD COLUMN case_id TEXT;
     """,
+    """
+    ALTER TABLE solves ADD COLUMN hints INTEGER NOT NULL DEFAULT 0;
+    """,
 )
 
 
@@ -165,7 +168,8 @@ class Database:
 
         """
         rows = self._conn.execute(
-            "SELECT id, time_ms, penalty, scramble, created_at, case_id FROM solves "
+            "SELECT id, time_ms, penalty, scramble, created_at, case_id, hints"
+            " FROM solves "
             "WHERE session_id = ? ORDER BY id",
             (session_id,),
         )
@@ -177,8 +181,9 @@ class Database:
                 created_at=datetime.fromisoformat(created_at),
                 id=solve_id,
                 case_id=case_id,
+                hints=hints,
             )
-            for solve_id, time_ms, penalty, scramble, created_at, case_id in rows
+            for solve_id, time_ms, penalty, scramble, created_at, case_id, hints in rows
         ]
 
     def add_solve(self, session_id: int, solve: Solve) -> int:
@@ -195,8 +200,8 @@ class Database:
         with self._conn:
             cursor = self._conn.execute(
                 "INSERT INTO solves"
-                " (session_id, time_ms, penalty, scramble, created_at, case_id)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                " (session_id, time_ms, penalty, scramble, created_at, case_id, hints)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     solve.time_ms,
@@ -204,6 +209,7 @@ class Database:
                     solve.scramble,
                     solve.created_at.isoformat(),
                     solve.case_id,
+                    solve.hints,
                 ),
             )
         solve.id = cursor.lastrowid

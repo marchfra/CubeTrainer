@@ -8,10 +8,12 @@ from pytestqt.qtbot import QtBot
 
 from cubetrainer.cases.catalog import load_case_set
 from cubetrainer.cases.trainer import case_scramble
+from cubetrainer.cube.model import parse_alg
 from cubetrainer.db import Database
+from cubetrainer.timing import TimerState
 from cubetrainer.ui.main_window import MainWindow
 from cubetrainer.ui.solve_dialog import SolveDialog
-from cubetrainer.ui.trainer_page import DIALOG_IMAGE_SIZE, TrainerPage
+from cubetrainer.ui.trainer_page import DIALOG_IMAGE_SIZE, HINT_PROMPT, TrainerPage
 from tests.helpers import FakeClock, do_solve
 
 PLL = load_case_set("pll")
@@ -144,3 +146,112 @@ def test_trainer_solves_are_kept_apart(qtbot: QtBot, clock: FakeClock) -> None:
     assert len(window.timer_page.solves) == 0
     stored = db.load_solves(db.get_or_create_session("trainer:pll"))
     assert [(s.time_ms, s.case_id is not None) for s in stored] == [(2_000, True)]
+
+
+def activate(qtbot: QtBot, page: TrainerPage) -> None:
+    """Make the page's window active, so its shortcuts fire.
+
+    Args:
+        qtbot: pytest-qt helper.
+        page: The page.
+
+    """
+    page.activateWindow()
+    qtbot.waitUntil(page.isActiveWindow)
+
+
+def test_hints_reveal_one_move_at_a_time(qtbot: QtBot, page: TrainerPage) -> None:
+    """→ shows the case image and the algorithm's first move, then one more per press.
+
+    The moves are the algorithm as written (no U turn added in front), with its
+    brackets: T is "(R U R' U') (R' F R2 U') (R' U' R U) (R' F')".
+    """
+    activate(qtbot, page)
+    total = len(parse_alg(T_CASE.alg))
+    assert page.hint_panel.moves.text() == HINT_PROMPT
+    assert page.hint_panel.image.pixmap().isNull()
+    height = page.hint_panel.height()
+
+    qtbot.keyClick(page, Qt.Key.Key_Right)
+    assert page.hints_shown == 1
+    assert not page.hint_panel.image.pixmap().isNull()
+    assert page.hint_panel.height() == height
+    assert page.hint_panel.moves.text() == f"(R   (+{total - 1} more)"
+
+    for _ in range(3):
+        qtbot.keyClick(page, Qt.Key.Key_Right)
+    # Four moves: the first group is complete, closing bracket included.
+    assert page.hint_panel.moves.text() == f"(R U R' U')   (+{total - 4} more)"
+
+    qtbot.keyClick(page, Qt.Key.Key_Right)
+    assert page.hint_panel.moves.text().startswith("(R U R' U') (R'   (+")
+
+    for _ in range(total + 3):
+        qtbot.keyClick(page, Qt.Key.Key_Right)
+    assert page.hints_shown == total
+    assert page.hint_panel.moves.text() == T_CASE.alg
+
+
+def test_hint_does_not_stop_running_solve(
+    qtbot: QtBot,
+    page: TrainerPage,
+    clock: FakeClock,
+) -> None:
+    """→ during a solve shows a hint and leaves the timer running."""
+    activate(qtbot, page)
+    qtbot.keyPress(page, Qt.Key.Key_Space)
+    clock.advance_ms(300)
+    qtbot.keyRelease(page, Qt.Key.Key_Space)
+
+    qtbot.keyClick(page, Qt.Key.Key_Right)
+
+    assert page.timer.machine.state is TimerState.RUNNING
+    assert page.hints_shown == 1
+
+
+def test_solve_records_hints_and_new_scramble_resets_them(
+    qtbot: QtBot,
+    page: TrainerPage,
+    clock: FakeClock,
+) -> None:
+    """The hint count is saved with the solve; the next scramble starts fresh."""
+    activate(qtbot, page)
+    for _ in range(3):
+        qtbot.keyClick(page, Qt.Key.Key_Right)
+
+    do_solve(qtbot, page, clock, 2_500)
+
+    assert page.solves.solves[-1].hints == 3
+    assert page.hints_shown == 0
+    assert page.hint_panel.moves.text() == HINT_PROMPT
+
+    do_solve(qtbot, page, clock, 2_000)
+    assert page.solves.solves[-1].hints == 0
+
+
+def test_browsing_scrambles_resets_hints(qtbot: QtBot, page: TrainerPage) -> None:
+    """Moving to another scramble with ▶ forgets the hints."""
+    activate(qtbot, page)
+    qtbot.keyClick(page, Qt.Key.Key_Right)
+
+    page.scramble_bar.show_next()
+
+    assert page.hints_shown == 0
+    assert page.hint_panel.image.pixmap().isNull()
+
+
+def test_right_arrow_still_stops_the_full_timer(qtbot: QtBot, clock: FakeClock) -> None:
+    """Hints are a trainer feature: in the full timer → is just 'any key'."""
+    window = MainWindow(Database(":memory:"))
+    qtbot.addWidget(window)
+    window.show()
+    timer_page = window.timer_page
+    timer_page.timer._clock = clock
+    qtbot.keyPress(timer_page, Qt.Key.Key_Space)
+    clock.advance_ms(300)
+    qtbot.keyRelease(timer_page, Qt.Key.Key_Space)
+
+    qtbot.keyClick(timer_page, Qt.Key.Key_Right)
+
+    assert timer_page.timer.machine.state is not TimerState.RUNNING
+    assert len(timer_page.solves) == 1
