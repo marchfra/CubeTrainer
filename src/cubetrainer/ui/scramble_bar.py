@@ -7,6 +7,7 @@ from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from cubetrainer.scramble_history import ScrambleHistory
+from cubetrainer.ui.sizing import reserve_width
 
 _COPIED_FEEDBACK_MS: int = 1200
 _COPY_TEXT: str = "Copy"
@@ -28,23 +29,6 @@ def _button(text: str, tooltip: str) -> QPushButton:
     button.setToolTip(tooltip)
     button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     return button
-
-
-def _reserve_width(button: QPushButton, *texts: str) -> None:
-    """Fix a button's width to fit its widest label, so changing text doesn't resize it.
-
-    Args:
-        button: The button, already showing its initial text.
-        *texts: Other labels the button may show later.
-
-    """
-    original = button.text()
-    widths = [button.sizeHint().width()]
-    for text in texts:
-        button.setText(text)
-        widths.append(button.sizeHint().width())
-    button.setText(original)
-    button.setFixedWidth(max(widths))
 
 
 class ScrambleBar(QWidget):
@@ -92,7 +76,7 @@ class ScrambleBar(QWidget):
             _COPY_TEXT,
             "Copy scramble to clipboard",
         )
-        _reserve_width(self.copy_button, _COPIED_TEXT)
+        reserve_width(self.copy_button, _COPIED_TEXT)
         self.prev_button.clicked.connect(self.show_previous)
         self.next_button.clicked.connect(self.show_next)
         self.copy_button.clicked.connect(self.copy)

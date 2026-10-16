@@ -1,9 +1,10 @@
 """The Learn tab: jperm-style list of a set's cases with their learning status."""
 
+from functools import cache
 from typing import override
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QMouseEvent, QShowEvent
+from PySide6.QtGui import QFont, QFontMetrics, QMouseEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -21,9 +22,19 @@ from cubetrainer.cases.catalog import Case, CaseSet, CaseStatus, load_case_set
 from cubetrainer.db import Database, trainer_session_kind
 from cubetrainer.formatting import format_average, format_value
 from cubetrainer.ui.case_images import case_pixmap
+from cubetrainer.ui.sizing import reserve_width
 
 #: Case sets offered in the set picker, by id.
 AVAILABLE_SETS: tuple[str, ...] = ("oll2", "pll2", "oll", "pll")
+
+#: The set the Learn tab opens on.
+DEFAULT_SET: str = "pll"
+
+#: The widest time the Best and Avg columns are sized for.
+_WIDEST_TIME: str = "59:59.99"
+
+#: Extra width on top of the widest text: labels are a little wider than their text.
+_COLUMN_SLACK: int = 6
 
 #: Background colour behind a case image for each status ("" means none).
 STATUS_COLORS: dict[CaseStatus, str] = {
@@ -36,6 +47,67 @@ STATUS_COLORS: dict[CaseStatus, str] = {
 IMAGE_SIZE: int = 96
 
 _COLUMN_TITLES: tuple[str, ...] = ("Case", "Name", "Algorithm", "Group", "Best", "Avg")
+
+
+@cache
+def _column_widths(bold: QFont, normal: QFont) -> dict[int, int]:
+    """Return minimum widths for the text columns that fit every set's content.
+
+    Using the same widths for every set keeps the columns from shifting when the set
+    changes. The algorithm column stretches to fill what's left.
+
+    Args:
+        bold: Font of the headers and case names.
+        normal: Font of the groups and times.
+
+    Returns:
+        Minimum width in pixels, keyed by column number.
+
+    """
+    bold_metrics, metrics = QFontMetrics(bold), QFontMetrics(normal)
+    cases = [case for set_id in AVAILABLE_SETS for case in load_case_set(set_id).cases]
+    names = [case.name for case in cases] + [_COLUMN_TITLES[1]]
+    groups = [case.group for case in cases]
+    time_width = max(
+        metrics.horizontalAdvance(_WIDEST_TIME),
+        bold_metrics.horizontalAdvance(_COLUMN_TITLES[4]),
+    )
+    widths = {
+        1: max(bold_metrics.horizontalAdvance(name) for name in names),
+        3: max(
+            *(metrics.horizontalAdvance(group) for group in groups),
+            bold_metrics.horizontalAdvance(_COLUMN_TITLES[3]),
+        ),
+        4: time_width,
+        5: time_width,
+    }
+    return {column: width + _COLUMN_SLACK for column, width in widths.items()}
+
+
+def _picker_text(set_name: str) -> str:
+    """Return the set picker's label for a set.
+
+    Args:
+        set_name: The set's name.
+
+    Returns:
+        e.g. ``"PLL  ▾"``.
+
+    """
+    return f"{set_name}  ▾"
+
+
+def _train_text(set_name: str) -> str:
+    """Return the Train button's label for a set.
+
+    Args:
+        set_name: The set's name.
+
+    Returns:
+        e.g. ``"Train PLL"``.
+
+    """
+    return f"Train {set_name}"
 
 
 class CaseImage(QLabel):
@@ -165,6 +237,8 @@ class CaseList(QWidget):
                 grid.addWidget(label, row, col)
                 labels[case.id] = label
         grid.setColumnStretch(2, 1)
+        for column, width in _column_widths(bold, QFont()).items():
+            grid.setColumnMinimumWidth(column, width)
         self.refresh_times()
 
     def refresh_times(self) -> None:
@@ -206,7 +280,7 @@ class LearnPage(QWidget):
     train_requested = Signal(str)
 
     def __init__(self, db: Database, parent: QWidget | None = None) -> None:
-        """Create the page showing the first available set.
+        """Create the page showing the default set (PLL).
 
         Args:
             db: The app database.
@@ -236,6 +310,8 @@ class LearnPage(QWidget):
         self._scroll: QScrollArea = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        # Always shown, so short sets don't get a wider list than long ones.
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
 
         top = QHBoxLayout()
         top.addWidget(QLabel("Set:"))
@@ -249,7 +325,12 @@ class LearnPage(QWidget):
         layout.addLayout(top)
         layout.addWidget(self._scroll, stretch=1)
 
-        self.case_list: CaseList = CaseList(load_case_set(AVAILABLE_SETS[0]), db)
+        names = [load_case_set(set_id).name for set_id in AVAILABLE_SETS]
+        # Fixed widths: the buttons don't resize (and move) when the set changes.
+        reserve_width(self.set_picker, *(_picker_text(name) for name in names))
+        reserve_width(self.train_button, *(_train_text(name) for name in names))
+
+        self.case_list: CaseList = CaseList(load_case_set(DEFAULT_SET), db)
         self._show_case_list(self.case_list)
 
     def _pop_up_set_menu(self) -> None:
@@ -287,5 +368,5 @@ class LearnPage(QWidget):
         """
         self.case_list = case_list
         self._scroll.setWidget(case_list)
-        self.set_picker.setText(f"{case_list.case_set.name}  ▾")
-        self.train_button.setText(f"Train {case_list.case_set.name}")
+        self.set_picker.setText(_picker_text(case_list.case_set.name))
+        self.train_button.setText(_train_text(case_list.case_set.name))

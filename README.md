@@ -29,7 +29,7 @@ and averages and means are rounded to the nearest hundredth.
 
 **Learn tab**
 
-- Four sets, chosen with the *Set* picker: 2-look OLL (3 edge + 7 corner cases),
+- Four sets, chosen with the *Set* picker (the tab opens on PLL): 2-look OLL (3 edge + 7 corner cases),
   2-look PLL (2 corner + 4 edge cases), full OLL (57) and full PLL (21), jperm-style: image, name, default algorithm (grouped into blocks with
   brackets), group, and best / average trainer times. The OLL numbering is
   cross-checked in the tests against the SpeedSolving wiki's algorithms.

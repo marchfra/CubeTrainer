@@ -10,7 +10,7 @@ from pytestqt.qtbot import QtBot
 
 from cubetrainer.db import Database, StoredSolveList
 from cubetrainer.solves import Penalty
-from cubetrainer.ui.scramble_bar import _reserve_width
+from cubetrainer.ui.sizing import reserve_width
 from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.timer_page import TimerPage
 from tests.helpers import FakeClock, do_solve
@@ -76,7 +76,7 @@ def test_reserve_width_fits_longest_label(qtbot: QtBot) -> None:
     qtbot.addWidget(button)
     long_text = "Copied to the clipboard, all good"
 
-    _reserve_width(button, long_text)
+    reserve_width(button, long_text)
     width = button.width()
     button.setText(long_text)
 

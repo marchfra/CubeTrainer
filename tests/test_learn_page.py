@@ -3,11 +3,12 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel
 from pytestqt.qtbot import QtBot
 
 from cubetrainer.cases.catalog import CaseStatus
 from cubetrainer.db import Database
-from cubetrainer.ui.learn_page import STATUS_COLORS, LearnPage
+from cubetrainer.ui.learn_page import AVAILABLE_SETS, STATUS_COLORS, LearnPage
 
 
 def make_page(qtbot: QtBot, db: Database) -> LearnPage:
@@ -131,3 +132,31 @@ def test_times_are_vertically_centred(qtbot: QtBot) -> None:
 
     for labels in (page.case_list.best_labels, page.case_list.mean_labels):
         assert labels["T"].alignment() & Qt.AlignmentFlag.AlignVCenter
+
+
+def test_opens_on_pll(qtbot: QtBot) -> None:
+    """The Learn tab starts on the PLL set."""
+    page = LearnPage(Database(":memory:"))
+    qtbot.addWidget(page)
+
+    assert page.case_list.case_set.id == "pll"
+    assert page.set_picker.text() == "PLL  ▾"
+
+
+def test_layout_is_the_same_for_every_set(qtbot: QtBot) -> None:
+    """Buttons and columns stay put when switching sets."""
+    page = make_page(qtbot, Database(":memory:"))
+    page.resize(1280, 700)
+    headers = ("Name", "Algorithm", "Group", "Best", "Avg")
+    layouts = []
+    for set_id in AVAILABLE_SETS:
+        page.select_set(set_id)
+        qtbot.wait(1)  # let the new list lay out
+        columns = {
+            label.text(): label.mapTo(page, label.rect().topLeft()).x()
+            for label in page.case_list.findChildren(QLabel)
+            if label.text() in headers
+        }
+        layouts.append((page.set_picker.width(), page.train_button.x(), columns))
+
+    assert all(layout == layouts[0] for layout in layouts)
