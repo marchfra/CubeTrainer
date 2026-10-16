@@ -8,13 +8,14 @@ changes in later steps.
 import os
 import sqlite3
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import override
 
 import platformdirs
 
-from cubetrainer.cases.catalog import CaseStatus
+from cubetrainer.cases.catalog import CaseCustomization, CaseStatus
 from cubetrainer.cases.filters import CaseFilter
 from cubetrainer.solves import Penalty, Solve, SolveList
 
@@ -23,6 +24,9 @@ DATA_DIR_ENV: str = "CUBETRAINER_DATA_DIR"
 
 #: Name of the app's data directory.
 APP_DIR_NAME: str = "CubeTrainer"
+
+#: Directory, next to the database, holding uploaded case images.
+IMAGES_DIR_NAME: str = "images"
 
 #: Database file name inside the data directory.
 DB_FILENAME: str = "cubetrainer.db"
@@ -76,6 +80,11 @@ MIGRATIONS: tuple[str, ...] = (
         value TEXT NOT NULL
     );
     """,
+    """
+    ALTER TABLE case_progress ADD COLUMN custom_alg TEXT;
+    ALTER TABLE case_progress ADD COLUMN image_path TEXT;
+    ALTER TABLE case_progress ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0;
+    """,
 )
 
 
@@ -120,6 +129,8 @@ class Database:
 
     Attributes:
         path: The database file, or ``":memory:"`` for a throwaway database.
+        images_dir: Where uploaded case images are kept: next to the database (a
+            temporary directory for a throwaway database).
 
     """
 
@@ -133,6 +144,11 @@ class Database:
         self.path: Path | str = path
         if isinstance(path, Path):
             path.parent.mkdir(parents=True, exist_ok=True)
+        self.images_dir: Path = (
+            path.parent / IMAGES_DIR_NAME
+            if isinstance(path, Path)
+            else Path(tempfile.gettempdir()) / "cubetrainer-images"
+        )
         self._conn: sqlite3.Connection = sqlite3.connect(path)
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._migrate()
@@ -304,6 +320,59 @@ class Database:
         )
         return {case_id: CaseStatus(status) for case_id, status in rows}
 
+    def load_case_customizations(self, set_id: str) -> dict[str, CaseCustomization]:
+        """Load what the user changed about a set's cases in the case editor.
+
+        Args:
+            set_id: The case set.
+
+        Returns:
+            Customisations keyed by case id, for the cases that have any.
+
+        """
+        rows = self._conn.execute(
+            "SELECT case_id, custom_alg, image_path, rotation FROM case_progress"
+            " WHERE set_id = ? AND (custom_alg IS NOT NULL OR image_path IS NOT NULL"
+            " OR rotation != 0)",
+            (set_id,),
+        )
+        return {
+            case_id: CaseCustomization(alg=alg, image_path=image, rotation=rotation)
+            for case_id, alg, image, rotation in rows
+        }
+
+    def save_case_customization(
+        self,
+        set_id: str,
+        case_id: str,
+        customization: CaseCustomization,
+    ) -> None:
+        """Store what the user changed about a case (keeping its learning status).
+
+        Args:
+            set_id: The case set.
+            case_id: The case.
+            customization: The new customisation (all defaults to reset the case).
+
+        """
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO case_progress"
+                " (set_id, case_id, status, custom_alg, image_path, rotation)"
+                " VALUES (?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT (set_id, case_id) DO UPDATE SET"
+                " custom_alg = excluded.custom_alg, image_path = excluded.image_path,"
+                " rotation = excluded.rotation",
+                (
+                    set_id,
+                    case_id,
+                    CaseStatus.UNLEARNED.value,
+                    customization.alg,
+                    customization.image_path,
+                    customization.rotation,
+                ),
+            )
+
     def set_case_status(self, set_id: str, case_id: str, status: CaseStatus) -> None:
         """Store the learning status of a case.
 
@@ -387,6 +456,15 @@ class StoredTrainerPrefs:
 
         """
         return self.db.load_case_statuses(self.set_id)
+
+    def customizations(self) -> dict[str, CaseCustomization]:
+        """Return what the user changed about the set's cases.
+
+        Returns:
+            Customisations keyed by case id.
+
+        """
+        return self.db.load_case_customizations(self.set_id)
 
     def load_filter(self) -> CaseFilter:
         """Return the saved filter, or the default one (every case, equally).

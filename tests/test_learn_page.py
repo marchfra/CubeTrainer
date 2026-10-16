@@ -3,11 +3,12 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QDialog, QLabel
 from pytestqt.qtbot import QtBot
 
-from cubetrainer.cases.catalog import CaseStatus
+from cubetrainer.cases.catalog import CaseCustomization, CaseStatus
 from cubetrainer.db import Database
+from cubetrainer.ui.case_editor import CaseEditor
 from cubetrainer.ui.learn_page import AVAILABLE_SETS, STATUS_COLORS, LearnPage
 
 
@@ -160,3 +161,40 @@ def test_layout_is_the_same_for_every_set(qtbot: QtBot) -> None:
         layouts.append((page.set_picker.width(), page.train_button.x(), columns))
 
     assert all(layout == layouts[0] for layout in layouts)
+
+
+def test_editing_a_case_updates_and_saves_it(qtbot: QtBot, tmp_path: Path) -> None:
+    """An accepted edit changes the row and is stored; a cancelled one isn't."""
+    db = Database(tmp_path / "app.db")
+    page = make_page(qtbot, db)
+    case_list = page.case_list
+    new_alg = "R U R' U' R' F R2 U' R' U' R U R' F'"
+    old_image = case_list.images["T"].pixmap().toImage()
+
+    def accept(dialog: QDialog) -> int:
+        assert isinstance(dialog, CaseEditor)
+        dialog.alg_edit.setText(new_alg)
+        dialog.rotate(1)
+        return QDialog.DialogCode.Accepted
+
+    case_list.run_dialog = accept
+    qtbot.mouseClick(case_list.edit_buttons["T"], Qt.MouseButton.LeftButton)
+
+    assert case_list.alg_labels["T"].text() == new_alg
+    assert case_list.images["T"].pixmap().toImage() != old_image
+    assert db.load_case_customizations("pll")["T"] == CaseCustomization(
+        alg=new_alg,
+        rotation=1,
+    )
+
+    def cancel(dialog: QDialog) -> int:
+        assert isinstance(dialog, CaseEditor)
+        dialog.alg_edit.setText("M2 U M U2 M' U M2")
+        return QDialog.DialogCode.Rejected
+
+    case_list.run_dialog = cancel
+    case_list.edit_case("T")
+    assert case_list.alg_labels["T"].text() == new_alg
+
+    reopened = make_page(qtbot, Database(tmp_path / "app.db"))
+    assert reopened.case_list.alg_labels["T"].text() == new_alg

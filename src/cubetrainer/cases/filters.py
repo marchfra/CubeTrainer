@@ -15,7 +15,13 @@ from typing import Protocol
 
 import numpy as np
 
-from cubetrainer.cases.catalog import Case, CaseKind, CaseSet, CaseStatus
+from cubetrainer.cases.catalog import (
+    Case,
+    CaseCustomization,
+    CaseKind,
+    CaseSet,
+    CaseStatus,
+)
 from cubetrainer.cases.recognition import corner_pattern, eo_pattern, oll_pattern
 from cubetrainer.cube.model import Move, parse_alg, state_solved_by
 
@@ -107,6 +113,15 @@ class TrainerPrefs(Protocol):
         """
         ...
 
+    def customizations(self) -> dict[str, CaseCustomization]:
+        """Return what the user changed about the set's cases (their algorithms).
+
+        Returns:
+            Customisations keyed by case id.
+
+        """
+        ...
+
     def load_filter(self) -> CaseFilter:
         """Return the saved filter, or the default one.
 
@@ -133,11 +148,22 @@ class MemoryTrainerPrefs:
     Attributes:
         case_statuses: Learning status by case id.
         case_filter: The current filter.
+        case_customizations: The user's changes to cases, by case id.
 
     """
 
     case_statuses: dict[str, CaseStatus] = field(default_factory=dict)
     case_filter: CaseFilter = field(default_factory=CaseFilter)
+    case_customizations: dict[str, CaseCustomization] = field(default_factory=dict)
+
+    def customizations(self) -> dict[str, CaseCustomization]:
+        """Return the user's changes to cases.
+
+        Returns:
+            Customisations keyed by case id.
+
+        """
+        return self.case_customizations
 
     def statuses(self) -> dict[str, CaseStatus]:
         """Return the learning statuses.

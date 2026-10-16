@@ -5,12 +5,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QLabel
 from pytestqt.qtbot import QtBot
 
-from cubetrainer.cases.catalog import CaseStatus, load_case_set
+from cubetrainer.cases.catalog import CaseCustomization, CaseStatus, load_case_set
 from cubetrainer.cases.filters import CaseFilter, MemoryTrainerPrefs
 from cubetrainer.cube.model import parse_alg
 from cubetrainer.db import Database
 from cubetrainer.solves import Solve
 from cubetrainer.timing import TimerState
+from cubetrainer.ui.case_images import case_pixmap
 from cubetrainer.ui.filter_dialog import FilterDialog
 from cubetrainer.ui.main_window import MainWindow
 from cubetrainer.ui.solve_dialog import SolveDialog
@@ -501,3 +502,32 @@ def test_two_look_trainers(
     assert trainer.filter_button.text() == f"{count} cases · equal  ▾"
     do_solve(qtbot, trainer, clock, 1_000)
     assert trainer.solves.solves[-1].case_id is not None
+
+
+def test_trainer_uses_the_users_alg(qtbot: QtBot, clock: FakeClock) -> None:
+    """Hints show the user's algorithm, and its scrambles are still recognised."""
+    own_alg = "y (R U R' U') (R' F R2 U') (R' U' R U) (R' F') y'"
+    prefs = MemoryTrainerPrefs(
+        case_statuses={"T": CaseStatus.LEARNING},
+        case_filter=CaseFilter(statuses=frozenset({CaseStatus.LEARNING})),
+        case_customizations={"T": CaseCustomization(alg=own_alg)},
+    )
+    page = TrainerPage(PLL, prefs=prefs, clock=clock)
+    qtbot.addWidget(page)
+    page.show()
+
+    for _ in range(100):
+        page.show_next_hint()
+    assert page.hint_panel.moves.text() == own_alg
+
+    do_solve(qtbot, page, clock, 1_000)
+    assert page.solves.solves[-1].case_id == "T"
+    info = page.case_info("T")
+    assert info is not None
+    assert (
+        info.image.toImage()
+        == case_pixmap(
+            CaseCustomization(alg=own_alg).apply_to(T_CASE),
+            DIALOG_IMAGE_SIZE,
+        ).toImage()
+    )

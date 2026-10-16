@@ -1,11 +1,12 @@
 """The Learn tab: jperm-style list of a set's cases with their learning status."""
 
 from functools import cache
-from typing import override
+from typing import TYPE_CHECKING, override
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QFontMetrics, QMouseEvent, QShowEvent
 from PySide6.QtWidgets import (
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -18,11 +19,22 @@ from PySide6.QtWidgets import (
 )
 
 from cubetrainer import stats
-from cubetrainer.cases.catalog import Case, CaseSet, CaseStatus, load_case_set
+from cubetrainer.cases.catalog import (
+    Case,
+    CaseCustomization,
+    CaseSet,
+    CaseStatus,
+    customize,
+    load_case_set,
+)
 from cubetrainer.db import Database, trainer_session_kind
 from cubetrainer.formatting import format_average, format_value
+from cubetrainer.ui.case_editor import CaseEditor
 from cubetrainer.ui.case_images import case_pixmap
 from cubetrainer.ui.sizing import reserve_width
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 #: Case sets offered in the set picker, by id.
 AVAILABLE_SETS: tuple[str, ...] = ("oll2", "pll2", "oll", "pll")
@@ -46,7 +58,15 @@ STATUS_COLORS: dict[CaseStatus, str] = {
 #: Displayed size of case images, in logical pixels.
 IMAGE_SIZE: int = 96
 
-_COLUMN_TITLES: tuple[str, ...] = ("Case", "Name", "Algorithm", "Group", "Best", "Avg")
+_COLUMN_TITLES: tuple[str, ...] = (
+    "Case",
+    "Name",
+    "Algorithm",
+    "Group",
+    "Best",
+    "Avg",
+    "",
+)
 
 
 @cache
@@ -172,14 +192,19 @@ class CaseImage(QLabel):
 class CaseList(QWidget):
     """Grid of one set's cases: image, name, algorithm, group, best and mean time.
 
-    The times come from the set's trainer solves, leaving out mistakes.
+    The times come from the set's trainer solves, leaving out mistakes. Each row has
+    an Edit button opening the case editor.
 
     Attributes:
-        case_set: The set shown.
+        case_set: The bundled set shown (without the user's changes).
         statuses: Current status of every case, keyed by case id.
+        customizations: The user's changes to cases, keyed by case id.
         images: The clickable image of every case, keyed by case id.
+        alg_labels: The algorithm shown for every case, keyed by case id.
+        edit_buttons: The Edit button of every case, keyed by case id.
         best_labels: Best trainer time of every case, keyed by case id.
         mean_labels: Mean trainer time of every case, keyed by case id.
+        run_dialog: Runs a dialog and returns its result; replaceable in tests.
 
     """
 
@@ -188,58 +213,101 @@ class CaseList(QWidget):
 
         Args:
             case_set: The set to show.
-            db: Database holding the cases' statuses.
+            db: Database holding the cases' statuses and the user's changes.
 
         """
         super().__init__()
         self.case_set: CaseSet = case_set
         self._db: Database = db
+        self.run_dialog: Callable[[QDialog], int] = lambda d: d.exec()
         stored = db.load_case_statuses(case_set.id)
         self.statuses: dict[str, CaseStatus] = {
             case.id: stored.get(case.id, CaseStatus.UNLEARNED)
             for case in case_set.cases
         }
+        self.customizations: dict[str, CaseCustomization] = db.load_case_customizations(
+            case_set.id,
+        )
         self.images: dict[str, CaseImage] = {}
+        self.alg_labels: dict[str, QLabel] = {}
+        self.edit_buttons: dict[str, QPushButton] = {}
         self.best_labels: dict[str, QLabel] = {}
         self.mean_labels: dict[str, QLabel] = {}
 
-        grid = QGridLayout(self)
-        grid.setHorizontalSpacing(24)
+        self._grid: QGridLayout = QGridLayout(self)
+        self._grid.setHorizontalSpacing(24)
         bold = QFont()
         bold.setBold(True)
         for col, title in enumerate(_COLUMN_TITLES):
             header = QLabel(title)
             header.setFont(bold)
-            grid.addWidget(header, 0, col)
+            self._grid.addWidget(header, 0, col)
+        shown = customize(case_set, self.customizations)
+        for row, case in enumerate(shown.cases, start=1):
+            self._add_row(row, case, bold)
+        self._grid.setColumnStretch(2, 1)
+        for column, width in _column_widths(bold, QFont()).items():
+            self._grid.setColumnMinimumWidth(column, width)
+        self.refresh_times()
 
+    def _add_row(self, row: int, case: Case, bold: QFont) -> None:
+        """Add one case's widgets to the grid.
+
+        Args:
+            row: Grid row.
+            case: The case, with the user's changes.
+            bold: Font for the case name.
+
+        """
+        image = CaseImage(case, self.statuses[case.id])
+        image.clicked.connect(lambda cid=case.id: self.cycle_status(cid))
+        self.images[case.id] = image
+        self._grid.addWidget(image, row, 0)
+
+        name = QLabel(case.name)
+        name.setFont(bold)
+        self._grid.addWidget(name, row, 1)
+        alg = QLabel(case.alg)
         alg_font = QFont()
         alg_font.setPointSize(15)
-        for row, case in enumerate(case_set.cases, start=1):
-            image = CaseImage(case, self.statuses[case.id])
-            image.clicked.connect(lambda cid=case.id: self.cycle_status(cid))
-            self.images[case.id] = image
-            grid.addWidget(image, row, 0)
+        alg.setFont(alg_font)
+        alg.setWordWrap(True)
+        alg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.alg_labels[case.id] = alg
+        self._grid.addWidget(alg, row, 2)
+        self._grid.addWidget(QLabel(case.group), row, 3)
+        for col, labels in ((4, self.best_labels), (5, self.mean_labels)):
+            label = QLabel()
+            label.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            )
+            self._grid.addWidget(label, row, col)
+            labels[case.id] = label
+        edit = QPushButton("Edit")
+        edit.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        edit.setToolTip("Change this case's algorithm or image")
+        edit.clicked.connect(lambda _=False, cid=case.id: self.edit_case(cid))
+        self.edit_buttons[case.id] = edit
+        self._grid.addWidget(edit, row, 6)
 
-            name = QLabel(case.name)
-            name.setFont(bold)
-            grid.addWidget(name, row, 1)
-            alg = QLabel(case.alg)
-            alg.setFont(alg_font)
-            alg.setWordWrap(True)
-            alg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            grid.addWidget(alg, row, 2)
-            grid.addWidget(QLabel(case.group), row, 3)
-            for col, labels in ((4, self.best_labels), (5, self.mean_labels)):
-                label = QLabel()
-                label.setAlignment(
-                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                )
-                grid.addWidget(label, row, col)
-                labels[case.id] = label
-        grid.setColumnStretch(2, 1)
-        for column, width in _column_widths(bold, QFont()).items():
-            grid.setColumnMinimumWidth(column, width)
-        self.refresh_times()
+    def edit_case(self, case_id: str) -> None:
+        """Open the case editor; save and show the changes if accepted.
+
+        Args:
+            case_id: The case to edit.
+
+        """
+        case = next(c for c in self.case_set.cases if c.id == case_id)
+        current = self.customizations.get(case_id, CaseCustomization())
+        editor = CaseEditor(case, current, self._db.images_dir, self)
+        if self.run_dialog(editor) != QDialog.DialogCode.Accepted:
+            return
+        customization = editor.customization()
+        self.customizations[case_id] = customization
+        self._db.save_case_customization(self.case_set.id, case_id, customization)
+        shown = customization.apply_to(case)
+        self.images[case_id].setPixmap(case_pixmap(shown, IMAGE_SIZE))
+        self.alg_labels[case_id].setText(shown.alg)
 
     def refresh_times(self) -> None:
         """Reload the trainer solves and show each case's best and mean time."""

@@ -15,7 +15,13 @@ from fractions import Fraction
 
 import numpy as np
 
-from cubetrainer.cases.catalog import Case, CaseKind, CaseSet, load_case_set
+from cubetrainer.cases.catalog import (
+    Case,
+    CaseKind,
+    CaseSet,
+    customize,
+    load_case_set,
+)
 from cubetrainer.cases.filters import (
     LOOK_SPACE,
     SKIP_LOOKS,
@@ -241,7 +247,9 @@ def filtered_case_scrambles(
     """
 
     def generate() -> str:
-        cases, _ = active_cases(case_set, prefs)
+        # The user's algorithms decide the orientation the case is set up in.
+        current = customize(case_set, prefs.customizations())
+        cases, _ = active_cases(current, prefs)
         case = pick_case(cases, rng, realistic=prefs.load_filter().realistic)
         return case_scramble(case, rng)
 

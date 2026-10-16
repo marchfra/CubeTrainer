@@ -298,9 +298,10 @@ class TrainerPage(TimerPage):
         Does nothing if the current scramble isn't one of the set's cases.
         """
         if not self._hint_alg:
-            case = self._recognizer.recognize(self.scramble_bar.scramble)
-            if case is None:
+            recognized = self._recognizer.recognize(self.scramble_bar.scramble)
+            if recognized is None:
                 return
+            case = self.current_case(recognized.id)
             self._hint_alg = case.alg
             self._hint_length = len(parse_alg(case.alg))
             self._hint_image = case_pixmap(case, HINT_IMAGE_SIZE)
@@ -338,10 +339,26 @@ class TrainerPage(TimerPage):
             The case's name and image, or None for a case not in the set.
 
         """
-        case = self._cases.get(case_id)
-        if case is None:
+        if case_id not in self._cases:
             return None
+        case = self.current_case(case_id)
         return CaseInfo(name=case.name, image=case_pixmap(case, DIALOG_IMAGE_SIZE))
+
+    def current_case(self, case_id: str) -> Case:
+        """Return one of the set's cases with the user's changes (algorithm, image).
+
+        Read afresh each time, so edits made in the Learn tab show straight away.
+
+        Args:
+            case_id: A case of the set.
+
+        Returns:
+            The case as the user customised it.
+
+        """
+        case = self._cases[case_id]
+        customization = self.prefs.customizations().get(case_id)
+        return customization.apply_to(case) if customization else case
 
     @override
     def make_solve(self, time_ms: int, scramble: str) -> Solve:

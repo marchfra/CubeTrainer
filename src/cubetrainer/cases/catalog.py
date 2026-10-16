@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, StrEnum
 from functools import cache
 from importlib import resources
@@ -54,8 +54,11 @@ class Case:
         id: Identifier, unique within its set (e.g. ``"Ua"``).
         name: Display name.
         group: Group the case belongs to (e.g. ``"Edges Only"``).
-        alg: Default algorithm that solves the case.
+        alg: Algorithm that solves the case (the user's, if they set one).
         kind: What the case is about (OLL, PLL, or one look of a 2-look method).
+        image_path: An image file the user chose to show instead of the generated
+            one, or None.
+        rotation: Clockwise quarter turns applied to the image (0 to 3).
 
     """
 
@@ -64,6 +67,8 @@ class Case:
     group: str
     alg: str
     kind: CaseKind = CaseKind.PLL
+    image_path: str | None = None
+    rotation: int = 0
 
     def state(self) -> CubeState:
         """Return the cube state this case's algorithm solves.
@@ -96,6 +101,60 @@ class CaseSet:
     def groups(self) -> list[str]:
         """The distinct groups, in order of first appearance."""
         return list(dict.fromkeys(case.group for case in self.cases))
+
+
+@dataclass(frozen=True, slots=True)
+class CaseCustomization:
+    """What the user changed about a case in the case editor.
+
+    Attributes:
+        alg: Their algorithm, or None for the default one.
+        image_path: Their image file, or None for the generated image.
+        rotation: Clockwise quarter turns applied to the image (0 to 3).
+
+    """
+
+    alg: str | None = None
+    image_path: str | None = None
+    rotation: int = 0
+
+    def apply_to(self, case: Case) -> Case:
+        """Return the case as the user customised it.
+
+        Args:
+            case: The bundled case.
+
+        Returns:
+            The case with the user's algorithm, image and rotation.
+
+        """
+        return replace(
+            case,
+            alg=self.alg or case.alg,
+            image_path=self.image_path,
+            rotation=self.rotation % 4,
+        )
+
+
+def customize(
+    case_set: CaseSet,
+    customizations: dict[str, CaseCustomization],
+) -> CaseSet:
+    """Return a set with the user's customisations applied to its cases.
+
+    Args:
+        case_set: The bundled set.
+        customizations: Customisations keyed by case id; other cases are unchanged.
+
+    Returns:
+        The customised set.
+
+    """
+    cases = tuple(
+        customizations[case.id].apply_to(case) if case.id in customizations else case
+        for case in case_set.cases
+    )
+    return replace(case_set, cases=cases)
 
 
 @cache

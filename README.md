@@ -38,6 +38,11 @@ and averages and means are rounded to the nearest hundredth.
   algorithm is ignored); OLL images show which stickers are yellow, the rest grey.
   2-look images grey out what their look ignores (the corners when orienting
   edges, the edges when permuting corners).
+- **Edit** a case to use your own algorithm (checked as you type: it must solve
+  the same case, but may start from another side, e.g. with a `y`, or add U
+  turns), upload your own image, or rotate the image in quarter turns. The
+  generated image follows your algorithm, so it shows the case the way you hold
+  the cube. Your algorithm is used everywhere: list, hints and scrambles.
 - Click a case image to cycle its status: unlearned → learning → finished (shown as
   the image's background colour, and named on hover). Statuses are saved.
 
@@ -87,7 +92,8 @@ and averages and means are rounded to the nearest hundredth.
 
 ## Data
 
-Solves and case statuses are stored in a SQLite database:
+Solves, case statuses and your case edits are stored in a SQLite database
+(uploaded images are copied into an `images` folder next to it):
 
 - macOS: `~/Library/Application Support/CubeTrainer/cubetrainer.db`
 - elsewhere: the platform's user data directory (via `platformdirs`), e.g.
@@ -134,6 +140,7 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
         recognition.py     identify OLL / PLL cases regardless of AUF
         trainer.py         case scrambles and recognising them
         filters.py         case filter and case probabilities
+        editing.py         checking a user's algorithm
         data/              bundled OLL and PLL cases and default algorithms
       ui/                  Qt widgets: main window, timer/trainer/learn pages, dialogs
     tests/                 pytest + pytest-qt
