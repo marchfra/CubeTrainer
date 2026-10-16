@@ -3,7 +3,7 @@
 from typing import override
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QMouseEvent
+from PySide6.QtGui import QFont, QMouseEvent, QShowEvent
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -16,8 +16,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from cubetrainer import stats
 from cubetrainer.cases.catalog import Case, CaseSet, CaseStatus, load_case_set
-from cubetrainer.db import Database
+from cubetrainer.db import Database, trainer_session_kind
+from cubetrainer.formatting import format_average, format_value
 from cubetrainer.ui.case_images import case_pixmap
 
 #: Case sets offered in the set picker, by id.
@@ -33,7 +35,7 @@ STATUS_COLORS: dict[CaseStatus, str] = {
 #: Displayed size of case images, in logical pixels.
 IMAGE_SIZE: int = 96
 
-_COLUMN_TITLES: tuple[str, ...] = ("Case", "Name", "Algorithm", "Group")
+_COLUMN_TITLES: tuple[str, ...] = ("Case", "Name", "Algorithm", "Group", "Best", "Avg")
 
 
 class CaseImage(QLabel):
@@ -96,12 +98,16 @@ class CaseImage(QLabel):
 
 
 class CaseList(QWidget):
-    """Grid of one set's cases: image (with status), name, algorithm and group.
+    """Grid of one set's cases: image, name, algorithm, group, best and mean time.
+
+    The times come from the set's trainer solves, leaving out mistakes.
 
     Attributes:
         case_set: The set shown.
         statuses: Current status of every case, keyed by case id.
         images: The clickable image of every case, keyed by case id.
+        best_labels: Best trainer time of every case, keyed by case id.
+        mean_labels: Mean trainer time of every case, keyed by case id.
 
     """
 
@@ -122,6 +128,8 @@ class CaseList(QWidget):
             for case in case_set.cases
         }
         self.images: dict[str, CaseImage] = {}
+        self.best_labels: dict[str, QLabel] = {}
+        self.mean_labels: dict[str, QLabel] = {}
 
         grid = QGridLayout(self)
         grid.setHorizontalSpacing(24)
@@ -149,7 +157,26 @@ class CaseList(QWidget):
             alg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             grid.addWidget(alg, row, 2)
             grid.addWidget(QLabel(case.group), row, 3)
+            for col, labels in ((4, self.best_labels), (5, self.mean_labels)):
+                label = QLabel()
+                label.setAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                )
+                grid.addWidget(label, row, col)
+                labels[case.id] = label
         grid.setColumnStretch(2, 1)
+        self.refresh_times()
+
+    def refresh_times(self) -> None:
+        """Reload the trainer solves and show each case's best and mean time."""
+        session = self._db.get_or_create_session(trainer_session_kind(self.case_set.id))
+        by_case = stats.case_stats(self._db.load_solves(session))
+        for case in self.case_set.cases:
+            case_stats = by_case.get(case.id)
+            best = case_stats.best if case_stats else None
+            mean = case_stats.mean if case_stats else None
+            self.best_labels[case.id].setText(format_value(best))
+            self.mean_labels[case.id].setText(format_average(mean))
 
     def cycle_status(self, case_id: str) -> None:
         """Advance a case to its next status, show it and save it.
@@ -230,6 +257,17 @@ class LearnPage(QWidget):
         self.set_menu.popup(
             self.set_picker.mapToGlobal(self.set_picker.rect().bottomLeft()),
         )
+
+    @override
+    def showEvent(self, event: QShowEvent) -> None:
+        """Refresh the trainer times each time the page is shown.
+
+        Args:
+            event: The show event.
+
+        """
+        super().showEvent(event)
+        self.case_list.refresh_times()
 
     def select_set(self, set_id: str) -> None:
         """Show the cases of another set.

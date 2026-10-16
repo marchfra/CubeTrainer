@@ -24,7 +24,12 @@ from PySide6.QtWidgets import (
 )
 
 from cubetrainer import stats
-from cubetrainer.formatting import format_average, format_solve, format_value
+from cubetrainer.formatting import (
+    format_average,
+    format_flags,
+    format_solve,
+    format_value,
+)
 from cubetrainer.solves import SolveList
 
 
@@ -34,25 +39,27 @@ class PanelLayout:
 
     Attributes:
         average_sizes: Averages shown in the summary and as table columns.
-        case_column: Whether the table has a column naming each solve's case.
+        trainer: Whether this is a trainer table: adds case and flag columns, and
+            leaves mistakes out of the summary's best and mean.
 
     """
 
     average_sizes: tuple[int, ...] = (5, 12)
-    case_column: bool = False
+    trainer: bool = False
 
     @property
     def columns(self) -> tuple[str, ...]:
         """The table column headers, in order."""
-        case = ("case",) if self.case_column else ()
-        return ("#", "time", *case, *(f"ao{n}" for n in self.average_sizes))
+        extra = ("case", "flags") if self.trainer else ()
+        return ("#", "time", *extra, *(f"ao{n}" for n in self.average_sizes))
 
 
 #: Layout of the full-solve timer: ao5 and ao12.
 TIMER_LAYOUT: PanelLayout = PanelLayout()
 
-#: Layout of the trainer: a case column; averages across different cases mean little.
-TRAINER_LAYOUT: PanelLayout = PanelLayout(average_sizes=(), case_column=True)
+#: Layout of the trainer: case and flags columns; averages across different cases mean
+#: little.
+TRAINER_LAYOUT: PanelLayout = PanelLayout(average_sizes=(), trainer=True)
 
 type _AnyIndex = QModelIndex | QPersistentModelIndex
 
@@ -175,6 +182,7 @@ class SolvesTableModel(QAbstractTableModel):
             "#": lambda: str(i + 1),
             "time": lambda: format_solve(solve),
             "case": lambda: self._case_name(solve.case_id) if solve.case_id else "",
+            "flags": lambda: format_flags(solve),
         }
         if header in texts:
             return texts[header]()
@@ -218,18 +226,20 @@ class SummaryPanel(QWidget):
 
     def __init__(
         self,
-        average_sizes: tuple[int, ...] = TIMER_LAYOUT.average_sizes,
+        layout: PanelLayout = TIMER_LAYOUT,
         parent: QWidget | None = None,
     ) -> None:
         """Create the grid with empty values.
 
         Args:
-            average_sizes: Averages to show a row for, below the single time.
+            layout: Which averages to show (a row each, below the single time), and
+                whether to leave mistakes out (trainer).
             parent: Optional parent widget.
 
         """
         super().__init__(parent)
-        self._average_sizes: tuple[int, ...] = average_sizes
+        self._average_sizes: tuple[int, ...] = layout.average_sizes
+        self._trainer: bool = layout.trainer
         grid = QGridLayout(self)
         bold = QFont()
         bold.setBold(True)
@@ -240,7 +250,7 @@ class SummaryPanel(QWidget):
             grid.addWidget(header, 0, col)
 
         self.cells: dict[tuple[str, str], QLabel] = {}
-        row_names = ["time", *(f"ao{n}" for n in average_sizes)]
+        row_names = ["time", *(f"ao{n}" for n in self._average_sizes)]
         for row, name in enumerate(row_names, start=1):
             grid.addWidget(QLabel(name), row, 0)
             for col, kind in enumerate(("current", "best"), start=1):
@@ -259,19 +269,24 @@ class SummaryPanel(QWidget):
             solves: The session's solves.
 
         """
-        values = solves.values()
+        all_values = solves.values()
         self.cells["time", "current"].setText(
-            format_value(values[-1] if values else None),
+            format_value(all_values[-1] if all_values else None),
         )
+        values = stats.clean_values(solves.solves) if self._trainer else all_values
         self.cells["time", "best"].setText(format_value(stats.best_single(values)))
         for n in self._average_sizes:
             current = stats.current_average(values, n)
             self.cells[f"ao{n}", "current"].setText(format_average(current))
             best = stats.best_average(values, n)
             self.cells[f"ao{n}", "best"].setText(format_average(best))
-        finished = sum(1 for v in values if math.isfinite(v))
+        finished = sum(1 for v in all_values if math.isfinite(v))
         mean = format_average(stats.mean_excluding_dnf(values))
-        self.mean_label.setText(f"solves: {finished}/{len(values)}    mean: {mean}")
+        text = f"solves: {finished}/{len(all_values)}    mean: {mean}"
+        if self._trainer:
+            mistakes = sum(s.mistake for s in solves.solves)
+            text += f"    mistakes: {mistakes}"
+        self.mean_label.setText(text)
 
 
 class SolvesPanel(QWidget):
@@ -305,7 +320,7 @@ class SolvesPanel(QWidget):
         """
         super().__init__(parent)
         self._solves: SolveList = solves
-        self.summary: SummaryPanel = SummaryPanel(layout.average_sizes)
+        self.summary: SummaryPanel = SummaryPanel(layout)
         self.model: SolvesTableModel = SolvesTableModel(solves, layout, case_name)
 
         self.table: QTableView = QTableView()

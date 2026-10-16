@@ -16,6 +16,7 @@ from cubetrainer.db import (
     Database,
     StoredSolveList,
     default_db_path,
+    trainer_session_kind,
 )
 from cubetrainer.solves import Penalty, Solve
 
@@ -218,3 +219,21 @@ def test_hints_round_trip(db: Database) -> None:
     db.add_solve(session, Solve(1_000, "R U", case_id="T", hints=4))
 
     assert [s.hints for s in db.load_solves(session)] == [4]
+
+
+def test_mistake_round_trip_and_update(db_path: Path) -> None:
+    """Mistake flags are stored, can be changed, and survive a reopen."""
+    db = Database(db_path)
+    session = db.get_or_create_session(trainer_session_kind("pll"))
+    solves = StoredSolveList(db, session)
+    solves.add(Solve(1_000, "", case_id="T", mistake=True))
+    solves.add(Solve(2_000, "", case_id="T"))
+    solves.set_mistake(-1, mistake=True)
+    solves.set_mistake(0, mistake=False)
+    db.close()
+
+    reopened = Database(db_path)
+    loaded = reopened.load_solves(reopened.get_or_create_session("trainer:pll"))
+
+    assert [s.mistake for s in loaded] == [False, True]
+    reopened.close()

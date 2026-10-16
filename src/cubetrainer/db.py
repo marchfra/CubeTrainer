@@ -66,7 +66,23 @@ MIGRATIONS: tuple[str, ...] = (
     """
     ALTER TABLE solves ADD COLUMN hints INTEGER NOT NULL DEFAULT 0;
     """,
+    """
+    ALTER TABLE solves ADD COLUMN mistake INTEGER NOT NULL DEFAULT 0;
+    """,
 )
+
+
+def trainer_session_kind(set_id: str) -> str:
+    """Return the session kind used by the trainer of a case set.
+
+    Args:
+        set_id: The case set, e.g. ``"pll"``.
+
+    Returns:
+        e.g. ``"trainer:pll"``.
+
+    """
+    return f"trainer:{set_id}"
 
 
 def default_db_path() -> Path:
@@ -168,8 +184,8 @@ class Database:
 
         """
         rows = self._conn.execute(
-            "SELECT id, time_ms, penalty, scramble, created_at, case_id, hints"
-            " FROM solves "
+            "SELECT id, time_ms, penalty, scramble, created_at, case_id, hints,"
+            " mistake FROM solves "
             "WHERE session_id = ? ORDER BY id",
             (session_id,),
         )
@@ -182,8 +198,18 @@ class Database:
                 id=solve_id,
                 case_id=case_id,
                 hints=hints,
+                mistake=bool(mistake),
             )
-            for solve_id, time_ms, penalty, scramble, created_at, case_id, hints in rows
+            for (
+                solve_id,
+                time_ms,
+                penalty,
+                scramble,
+                created_at,
+                case_id,
+                hints,
+                mistake,
+            ) in rows
         ]
 
     def add_solve(self, session_id: int, solve: Solve) -> int:
@@ -200,8 +226,8 @@ class Database:
         with self._conn:
             cursor = self._conn.execute(
                 "INSERT INTO solves"
-                " (session_id, time_ms, penalty, scramble, created_at, case_id, hints)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                " (session_id, time_ms, penalty, scramble, created_at, case_id, hints,"
+                " mistake) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     solve.time_ms,
@@ -210,6 +236,7 @@ class Database:
                     solve.created_at.isoformat(),
                     solve.case_id,
                     solve.hints,
+                    int(solve.mistake),
                 ),
             )
         solve.id = cursor.lastrowid
@@ -228,6 +255,20 @@ class Database:
             self._conn.execute(
                 "UPDATE solves SET penalty = ? WHERE id = ?",
                 (penalty.value, solve_id),
+            )
+
+    def update_mistake(self, solve_id: int, *, mistake: bool) -> None:
+        """Change whether a stored solve is marked as a mistake.
+
+        Args:
+            solve_id: The solve.
+            mistake: The new flag.
+
+        """
+        with self._conn:
+            self._conn.execute(
+                "UPDATE solves SET mistake = ? WHERE id = ?",
+                (int(mistake), solve_id),
             )
 
     def delete_solve(self, solve_id: int) -> None:
@@ -335,3 +376,17 @@ class StoredSolveList(SolveList):
         solve_id = self.solves[index].id
         if solve_id is not None:
             self.db.update_penalty(solve_id, penalty)
+
+    @override
+    def set_mistake(self, index: int, *, mistake: bool) -> None:
+        """Mark or unmark a solve as messed up, and store the change.
+
+        Args:
+            index: Position of the solve (0 is the oldest; -1 is the newest).
+            mistake: Whether the solve was a mistake.
+
+        """
+        super().set_mistake(index, mistake=mistake)
+        solve_id = self.solves[index].id
+        if solve_id is not None:
+            self.db.update_mistake(solve_id, mistake=mistake)

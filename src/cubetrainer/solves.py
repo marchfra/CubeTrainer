@@ -29,6 +29,7 @@ class Solve:
         id: Database id, or None if the solve hasn't been stored.
         case_id: For trainer solves, the case that was scrambled; None for full solves.
         hints: For trainer solves, how many hint steps were revealed.
+        mistake: For trainer solves, whether the user marked it as messed up.
 
     """
 
@@ -39,6 +40,7 @@ class Solve:
     id: int | None = None
     case_id: str | None = None
     hints: int = 0
+    mistake: bool = False
 
     @property
     def value(self) -> float:
@@ -101,6 +103,16 @@ class SolveList:
 
         """
         self.solves[index].penalty = penalty
+
+    def set_mistake(self, index: int, *, mistake: bool) -> None:
+        """Mark or unmark a solve as messed up.
+
+        Args:
+            index: Position of the solve (0 is the oldest; -1 is the newest).
+            mistake: Whether the solve was a mistake.
+
+        """
+        self.solves[index].mistake = mistake
 
     def values(self) -> list[float]:
         """Return every solve's statistics value, oldest first.

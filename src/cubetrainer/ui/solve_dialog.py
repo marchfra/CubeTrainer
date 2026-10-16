@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -41,6 +42,7 @@ class SolveDialog(QDialog):
         time_label: Shows the time, including any penalty.
         penalty_buttons: Radio buttons keyed by penalty.
         delete_button: Closes the dialog asking for deletion.
+        mistake_box: Marks a trainer solve as a mistake (None for full solves).
 
     """
 
@@ -80,20 +82,6 @@ class SolveDialog(QDialog):
             Qt.TextInteractionFlag.TextSelectableByMouse,
         )
 
-        penalty_row = QHBoxLayout()
-        group = QButtonGroup(self)
-        self.penalty_buttons: dict[Penalty, QRadioButton] = {}
-        for penalty, label in PENALTY_LABELS.items():
-            button = QRadioButton(label)
-            button.setChecked(penalty is solve.penalty)
-            button.toggled.connect(
-                lambda checked, p=penalty: self._on_penalty_toggled(p, checked=checked),
-            )
-            group.addButton(button)
-            penalty_row.addWidget(button)
-            self.penalty_buttons[penalty] = button
-        penalty_row.addStretch()
-
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         self.delete_button: QPushButton = buttons.addButton(
             "Delete",
@@ -104,22 +92,61 @@ class SolveDialog(QDialog):
 
         layout = QVBoxLayout(self)
         if case is not None:
-            image = QLabel()
-            image.setPixmap(case.image)
-            layout.addWidget(image, alignment=Qt.AlignmentFlag.AlignHCenter)
-            case_label = QLabel(f"Case: {case.name}")
-            case_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            case_font = QFont()
-            case_font.setPointSize(18)
-            case_font.setBold(True)
-            case_label.setFont(case_font)
-            layout.addWidget(case_label)
+            self._add_case_header(layout, case)
         layout.addWidget(self.time_label)
         layout.addWidget(date_label)
         layout.addWidget(scramble_label)
-        layout.addLayout(penalty_row)
+        layout.addLayout(self._penalty_row())
+        self.mistake_box: QCheckBox | None = None
+        if case is not None:
+            self.mistake_box = QCheckBox("Mistake (messed up during the solve)")
+            self.mistake_box.setChecked(solve.mistake)
+            self.mistake_box.toggled.connect(self._on_mistake_toggled)
+            layout.addWidget(self.mistake_box)
         layout.addWidget(buttons)
         self._update_time()
+
+    @staticmethod
+    def _add_case_header(layout: QVBoxLayout, case: CaseInfo) -> None:
+        """Add the case image and name at the top of the dialog.
+
+        Args:
+            layout: The dialog's layout.
+            case: The case to show.
+
+        """
+        image = QLabel()
+        image.setPixmap(case.image)
+        layout.addWidget(image, alignment=Qt.AlignmentFlag.AlignHCenter)
+        case_label = QLabel(f"Case: {case.name}")
+        case_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        font = QFont()
+        font.setPointSize(18)
+        font.setBold(True)
+        case_label.setFont(font)
+        layout.addWidget(case_label)
+
+    def _penalty_row(self) -> QHBoxLayout:
+        """Build the OK / +2 / DNF radio buttons and fill ``penalty_buttons``.
+
+        Returns:
+            The row of buttons.
+
+        """
+        row = QHBoxLayout()
+        group = QButtonGroup(self)
+        self.penalty_buttons: dict[Penalty, QRadioButton] = {}
+        for penalty, label in PENALTY_LABELS.items():
+            button = QRadioButton(label)
+            button.setChecked(penalty is self._solve.penalty)
+            button.toggled.connect(
+                lambda checked, p=penalty: self._on_penalty_toggled(p, checked=checked),
+            )
+            group.addButton(button)
+            row.addWidget(button)
+            self.penalty_buttons[penalty] = button
+        row.addStretch()
+        return row
 
     def _on_penalty_toggled(self, penalty: Penalty, *, checked: bool) -> None:
         """Apply a penalty when its radio button becomes checked.
@@ -132,6 +159,15 @@ class SolveDialog(QDialog):
         if checked:
             self._solve.penalty = penalty
             self._update_time()
+
+    def _on_mistake_toggled(self, checked: bool) -> None:  # noqa: FBT001
+        """Apply the mistake checkbox to the solve.
+
+        Args:
+            checked: Whether the box is now checked (Qt passes it positionally).
+
+        """
+        self._solve.mistake = checked
 
     def _update_time(self) -> None:
         """Show the solve's time with its current penalty."""

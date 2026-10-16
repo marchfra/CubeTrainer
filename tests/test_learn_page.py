@@ -116,3 +116,11 @@ def test_selecting_a_set_relabels_buttons(qtbot: QtBot) -> None:
     assert page.set_picker.text() == "PLL  ▾"
     assert page.train_button.text() == "Train PLL"
     assert page.case_list.case_set.id == "pll"
+
+
+def test_times_are_vertically_centred(qtbot: QtBot) -> None:
+    """Best and avg sit in the middle of their row, like the other columns."""
+    page = make_page(qtbot, Database(":memory:"))
+
+    for labels in (page.case_list.best_labels, page.case_list.mean_labels):
+        assert labels["T"].alignment() & Qt.AlignmentFlag.AlignVCenter

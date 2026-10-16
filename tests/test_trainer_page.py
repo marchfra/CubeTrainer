@@ -10,10 +10,16 @@ from cubetrainer.cases.catalog import load_case_set
 from cubetrainer.cases.trainer import case_scramble
 from cubetrainer.cube.model import parse_alg
 from cubetrainer.db import Database
+from cubetrainer.solves import Solve
 from cubetrainer.timing import TimerState
 from cubetrainer.ui.main_window import MainWindow
 from cubetrainer.ui.solve_dialog import SolveDialog
-from cubetrainer.ui.trainer_page import DIALOG_IMAGE_SIZE, HINT_PROMPT, TrainerPage
+from cubetrainer.ui.trainer_page import (
+    DIALOG_IMAGE_SIZE,
+    HINT_PROMPT,
+    MISTAKE_COLOR,
+    TrainerPage,
+)
 from tests.helpers import FakeClock, do_solve
 
 PLL = load_case_set("pll")
@@ -50,7 +56,7 @@ def test_solve_records_its_case(
     solve = page.solves.solves[0]
     assert solve.case_id == "T"
     model = page.solves_panel.model
-    assert model.columnCount() == 3
+    assert model.columnCount() == 4
     assert model.data(model.index(0, 2)) == "T"
 
 
@@ -255,3 +261,138 @@ def test_right_arrow_still_stops_the_full_timer(qtbot: QtBot, clock: FakeClock) 
 
     assert timer_page.timer.machine.state is not TimerState.RUNNING
     assert len(timer_page.solves) == 1
+
+
+def test_m_flags_the_last_solve(
+    qtbot: QtBot,
+    page: TrainerPage,
+    clock: FakeClock,
+) -> None:
+    """After a solve, M toggles its mistake flag; the button and stats follow."""
+    activate(qtbot, page)
+    do_solve(qtbot, page, clock, 1_500)
+    assert not page.mistake_button.isChecked()
+
+    qtbot.keyClick(page, Qt.Key.Key_M)
+    assert page.solves.solves[-1].mistake
+    assert page.mistake_button.isChecked()
+    model = page.solves_panel.model
+    assert model.data(model.index(0, 3)) == "✗"
+    case_row = page.case_stats.proxy
+    assert case_row.data(case_row.index(0, 5)) == "100%"
+
+    qtbot.keyClick(page, Qt.Key.Key_M)
+    assert not page.solves.solves[-1].mistake
+    assert not page.mistake_button.isChecked()
+
+
+def test_m_during_a_solve_flags_it_without_stopping(
+    qtbot: QtBot,
+    page: TrainerPage,
+    clock: FakeClock,
+) -> None:
+    """M mid-solve keeps the timer running and flags the solve when it ends."""
+    activate(qtbot, page)
+    do_solve(qtbot, page, clock, 1_000)  # an earlier, clean solve
+    qtbot.keyPress(page, Qt.Key.Key_Space)
+    clock.advance_ms(300)
+    qtbot.keyRelease(page, Qt.Key.Key_Space)
+
+    qtbot.keyClick(page, Qt.Key.Key_M)
+
+    assert page.timer.machine.state is TimerState.RUNNING
+    assert page.mistake_button.isChecked()
+    assert not page.solves.solves[-1].mistake  # the earlier solve is untouched
+
+    clock.advance_ms(2_000)
+    qtbot.keyPress(page, Qt.Key.Key_Space)
+    qtbot.keyRelease(page, Qt.Key.Key_Space)
+    assert [s.mistake for s in page.solves.solves] == [False, True]
+
+    do_solve(qtbot, page, clock, 1_000)  # the flag doesn't carry over
+    assert page.solves.solves[-1].mistake is False
+
+
+def test_mistake_button_matches_m(
+    qtbot: QtBot,
+    page: TrainerPage,
+    clock: FakeClock,
+) -> None:
+    """Clicking the button does what M does."""
+    do_solve(qtbot, page, clock, 1_500)
+
+    qtbot.mouseClick(page.mistake_button, Qt.MouseButton.LeftButton)
+
+    assert page.solves.solves[-1].mistake
+    assert page.mistake_button.isChecked()
+
+
+def test_mistake_without_solves_does_nothing(page: TrainerPage) -> None:
+    """With no solves yet, marking a mistake is harmless."""
+    page.toggle_mistake()
+
+    assert not page.mistake_button.isChecked()
+
+
+def test_dialog_mistake_box_is_saved(qtbot: QtBot, clock: FakeClock) -> None:
+    """The solve dialog's mistake box changes and stores the flag."""
+    db = Database(":memory:")
+    window = MainWindow(db)
+    qtbot.addWidget(window)
+    window.show()
+    window.open_trainer("pll")
+    trainer = window.trainer_pages["pll"]
+    trainer.timer._clock = clock
+    do_solve(qtbot, trainer, clock, 1_500)
+
+    def run_dialog(dialog: QDialog) -> int:
+        assert isinstance(dialog, SolveDialog)
+        assert dialog.mistake_box is not None
+        dialog.mistake_box.setChecked(True)
+        return 0
+
+    trainer.run_dialog = run_dialog
+    trainer.show_solve(0)
+
+    stored = db.load_solves(db.get_or_create_session("trainer:pll"))
+    assert [s.mistake for s in stored] == [True]
+    assert trainer.mistake_button.isChecked()
+
+
+def test_full_solves_have_no_mistake_box(qtbot: QtBot) -> None:
+    """The full timer's dialog has no mistake box."""
+    dialog = SolveDialog(Solve(1_000, ""), 1)
+    qtbot.addWidget(dialog)
+
+    assert dialog.mistake_box is None
+
+
+def test_learn_page_shows_trainer_times(qtbot: QtBot, clock: FakeClock) -> None:
+    """The Learn cards show each case's best and mean, updated when shown again."""
+    window = MainWindow(Database(":memory:"))
+    qtbot.addWidget(window)
+    window.show()
+    window.open_trainer("pll")
+    trainer = window.trainer_pages["pll"]
+    trainer.timer._clock = clock
+    case = trainer._recognizer.recognize(trainer.scramble_bar.scramble)
+    assert case is not None
+    do_solve(qtbot, trainer, clock, 1_500)
+    do_solve(qtbot, trainer, clock, 9_000)
+    trainer.toggle_mistake()  # the 9.00 is a mistake: left out
+
+    window.tabs.setCurrentWidget(window.learn_page)
+
+    cards = window.learn_page.case_list
+    assert cards.best_labels[case.id].text() == "1.50"
+    assert cards.mean_labels[case.id].text() == "1.50"
+
+
+def test_mistake_button_turns_red_when_checked(page: TrainerPage) -> None:
+    """The button is labelled "Mistake" and styled red only when checked."""
+    button = page.mistake_button
+
+    assert button.text() == "Mistake"
+    style = button.styleSheet()
+    assert style.startswith(f"#{button.objectName()}:checked {{")
+    assert MISTAKE_COLOR in style

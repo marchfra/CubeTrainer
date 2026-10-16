@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from cubetrainer.cases.catalog import load_case_set
-from cubetrainer.db import Database, StoredSolveList
+from cubetrainer.db import Database, StoredSolveList, trainer_session_kind
 from cubetrainer.ui.learn_page import LearnPage
 from cubetrainer.ui.timer_page import TimerPage
 from cubetrainer.ui.trainer_page import TrainerPage
@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._db: Database = db
         self.setWindowTitle("CubeTrainer")
-        self.resize(1100, 720)
+        self.resize(1280, 760)
 
         self.tabs: QTabWidget = QTabWidget()
         timer_solves = StoredSolveList(db, db.get_or_create_session())
@@ -80,7 +80,7 @@ class MainWindow(QMainWindow):
         """
         page = self.trainer_pages.get(set_id)
         if page is None:
-            session = self._db.get_or_create_session(f"trainer:{set_id}")
+            session = self._db.get_or_create_session(trainer_session_kind(set_id))
             page = TrainerPage(
                 load_case_set(set_id),
                 solves=StoredSolveList(self._db, session),

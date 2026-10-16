@@ -131,17 +131,33 @@ def test_averages_are_rounded_but_singles_truncated(qtbot: QtBot) -> None:
     assert panel.summary.cells["ao5", "best"].text() == "11.61"
 
 
-def test_trainer_layout_shows_case_names(qtbot: QtBot) -> None:
-    """The trainer table has a case column and no averages."""
+def test_trainer_layout_shows_case_names_and_flags(qtbot: QtBot) -> None:
+    """The trainer table has case and flags columns and no averages."""
     solve_list = SolveList()
-    solve_list.add(Solve(2_000, "", case_id="Ua"))
-    solve_list.add(Solve(3_000, ""))
+    solve_list.add(Solve(2_000, "", case_id="Ua", hints=2))
+    solve_list.add(Solve(3_000, "", mistake=True))
     panel = SolvesPanel(solve_list, TRAINER_LAYOUT, case_name=lambda cid: f"{cid}-perm")
     qtbot.addWidget(panel)
 
-    assert TRAINER_LAYOUT.columns == ("#", "time", "case")
-    assert panel.model.columnCount() == 3
-    assert [cell(panel, 1, c) for c in range(3)] == ["1", "2.00", "Ua-perm"]
+    assert TRAINER_LAYOUT.columns == ("#", "time", "case", "flags")
+    assert [cell(panel, 1, c) for c in range(4)] == ["1", "2.00", "Ua-perm", "💡2"]
     assert cell(panel, 0, 2) == ""
+    assert cell(panel, 0, 3) == "✗"
     assert ("ao5", "current") not in panel.summary.cells
-    assert panel.summary.mean_label.text() == "solves: 2/2    mean: 2.50"
+
+
+def test_trainer_summary_leaves_out_mistakes(qtbot: QtBot) -> None:
+    """Best and mean ignore mistakes; the current time and the count don't."""
+    solve_list = SolveList()
+    solve_list.add(Solve(4_000, ""))
+    solve_list.add(Solve(2_000, ""))
+    solve_list.add(Solve(1_000, "", mistake=True))
+    panel = SolvesPanel(solve_list, TRAINER_LAYOUT)
+    qtbot.addWidget(panel)
+
+    cells = panel.summary.cells
+    assert cells["time", "current"].text() == "1.00"
+    assert cells["time", "best"].text() == "2.00"
+    assert panel.summary.mean_label.text() == (
+        "solves: 3/3    mean: 3.00    mistakes: 1"
+    )

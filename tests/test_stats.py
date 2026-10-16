@@ -5,6 +5,7 @@ import math
 import pytest
 
 from cubetrainer import stats
+from cubetrainer.solves import Solve
 
 DNF = math.inf
 
@@ -83,3 +84,63 @@ def test_mean_excludes_dnfs() -> None:
     assert stats.mean_excluding_dnf([10_000, DNF, 12_000]) == 11_000
     assert stats.mean_excluding_dnf([DNF]) is None
     assert stats.mean_excluding_dnf([]) is None
+
+
+def trainer_solve(
+    case_id: str,
+    ms: int,
+    *,
+    mistake: bool = False,
+    hints: int = 0,
+) -> Solve:
+    """Build a trainer solve.
+
+    Args:
+        case_id: The case.
+        ms: The time in milliseconds.
+        mistake: Whether it's marked as a mistake.
+        hints: Hint steps used.
+
+    Returns:
+        The solve.
+
+    """
+    return Solve(ms, "", case_id=case_id, mistake=mistake, hints=hints)
+
+
+def test_case_stats_leave_out_mistakes_but_count_them() -> None:
+    """Best, mean and ao5 ignore mistakes; the count and rates include them."""
+    solves = [
+        trainer_solve("T", 3_000),
+        trainer_solve("T", 1_000, mistake=True),
+        trainer_solve("T", 2_000, hints=2),
+        trainer_solve("Ua", 5_000),
+        Solve(9_000, ""),  # no case: ignored
+    ]
+
+    by_case = stats.case_stats(solves)
+
+    assert set(by_case) == {"T", "Ua"}
+    t = by_case["T"]
+    assert (t.count, t.best, t.mean, t.current_average) == (3, 2_000, 2_500, None)
+    assert t.mistake_rate == pytest.approx(1 / 3)
+    assert t.hint_rate == pytest.approx(1 / 3)
+    assert by_case["Ua"].count == 1
+
+
+def test_case_ao5_uses_the_last_five_clean_solves() -> None:
+    """A mistake in the middle doesn't break the case's ao5."""
+    times = [1_000, 2_000, 3_000, 4_000, 5_000]
+    solves = [trainer_solve("T", ms) for ms in times[:2]]
+    solves.append(trainer_solve("T", 100, mistake=True))
+    solves.extend(trainer_solve("T", ms) for ms in times[2:])
+
+    assert stats.case_stats(solves)["T"].current_average == 3_000
+
+
+def test_case_stats_with_only_mistakes() -> None:
+    """A case with nothing but mistakes has no times."""
+    by_case = stats.case_stats([trainer_solve("T", 1_000, mistake=True)])
+
+    assert (by_case["T"].best, by_case["T"].mean) == (None, None)
+    assert by_case["T"].mistake_rate == 1.0

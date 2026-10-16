@@ -74,3 +74,41 @@ def format_solve_detailed(solve: Solve) -> str:
     if solve.penalty is Penalty.PLUS_TWO:
         return f"{format_value(solve.value)} ({raw} + 2)"
     return raw
+
+
+#: Marker for a solve flagged as a mistake.
+MISTAKE_MARK: str = "✗"
+
+#: Marker for a solve that used hints, followed by how many steps were revealed.
+HINT_MARK: str = "💡"
+
+
+def format_flags(solve: Solve) -> str:
+    """Describe a trainer solve's flags: ``"✗"`` for a mistake, ``"💡3"`` for hints.
+
+    Args:
+        solve: The solve.
+
+    Returns:
+        The markers separated by a space, or an empty string.
+
+    """
+    flags: list[str] = []
+    if solve.mistake:
+        flags.append(MISTAKE_MARK)
+    if solve.hints:
+        flags.append(f"{HINT_MARK}{solve.hints}")
+    return " ".join(flags)
+
+
+def format_percent(fraction: float) -> str:
+    """Format a fraction as a whole percentage.
+
+    Args:
+        fraction: A value between 0 and 1.
+
+    Returns:
+        e.g. ``"33%"``.
+
+    """
+    return f"{round(fraction * 100)}%"

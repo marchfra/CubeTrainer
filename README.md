@@ -21,6 +21,7 @@ algorithm trainer. Built with Python and PySide6.
 | ⌘1 / ⌘2 / ⌘3 | Mark the last solve OK / +2 / DNF |
 | ⌘Z | Delete the last solve (asks first) |
 | → | Trainer only: reveal the next hint step |
+| M | Trainer only: flag the solve in progress (or the last one) as a mistake (the *Mistake* button turns red) |
 
 Statistics follow cstimer and the WCA regulations: averages trim 5% (rounded up) from
 each end, a DNF counts as the worst result, single times are truncated to hundredths
@@ -29,7 +30,7 @@ and averages and means are rounded to the nearest hundredth.
 **Learn tab**
 
 - The 21 PLL cases, jperm-style: image, name, default algorithm (grouped into
-  blocks with brackets) and group.
+  blocks with brackets), group, and best / average trainer times.
 - Case images are drawn from the algorithm itself (yellow top, green front), with
   arrows showing how the pieces move; a final AUF in the algorithm is ignored.
 - Click a case image to cycle its status: unlearned → learning → finished (shown as
@@ -49,6 +50,14 @@ and averages and means are rounded to the nearest hundredth.
   algorithm into blocks, like `(R U R' U')`, are shown but don't count as steps. →
   works before and during a solve and never stops the timer. The number of hint steps used is saved with the
   solve.
+- **Mistakes:** press M (or click *Mistake*, red while flagged) if you messed up. During a solve it
+  flags that solve without stopping the timer; otherwise it toggles the flag of the
+  last solve. The solve dialog has a *Mistake* checkbox too.
+- The solves table shows flags: ✗ for a mistake, 💡n for n hint steps used.
+- **Per-case table:** n, best, avg, ao5, err% (mistake rate) and hint% for every
+  case trained, sortable by any column. Best/avg/ao5 leave out mistakes; hinted
+  solves count. The summary's best and mean leave out mistakes too.
+- The Learn tab shows each case's best and average trainer time.
 - The same shortcuts work (⌘1/⌘2/⌘3, ⌘Z). No inspection.
 
 **Stats** tab: coming soon.

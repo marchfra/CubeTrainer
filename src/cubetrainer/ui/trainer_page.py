@@ -16,7 +16,9 @@ from cubetrainer.cases.trainer import (
 )
 from cubetrainer.cube.model import parse_alg, reveal_alg
 from cubetrainer.solves import Solve, SolveList
+from cubetrainer.timing import TimerState
 from cubetrainer.ui.case_images import CaseInfo, case_pixmap
+from cubetrainer.ui.case_stats_panel import CaseStatsPanel
 from cubetrainer.ui.solves_panel import TRAINER_LAYOUT, PanelLayout
 from cubetrainer.ui.timer_page import TimerPage
 
@@ -28,6 +30,15 @@ HINT_IMAGE_SIZE: int = 120
 
 #: Shortcut revealing the next hint step.
 HINT_SHORTCUT: str = "Right"
+
+#: Shortcut marking the current (or last) solve as a mistake.
+MISTAKE_SHORTCUT: str = "M"
+
+#: Background of the Mistake button while the solve it acts on is flagged.
+MISTAKE_COLOR: str = "#e5484d"
+
+#: Width of the per-case statistics table.
+CASE_STATS_WIDTH: int = 380
 
 #: Shown in the hint panel before any hint is revealed.
 HINT_PROMPT: str = "Press → for a hint"
@@ -101,6 +112,8 @@ class TrainerPage(TimerPage):
         back_button: Returns to the full timer.
         hint_panel: Shows the hints for the current scramble.
         hints_shown: How many hint steps have been revealed for the current scramble.
+        mistake_button: Marks the current (or last) solve as a mistake, like M.
+        case_stats: Per-case statistics table.
         PANEL_LAYOUT: The trainer table, with a case column.
 
     """
@@ -149,6 +162,24 @@ class TrainerPage(TimerPage):
         header = QHBoxLayout()
         header.addWidget(self.title)
         header.addStretch()
+        self._pending_mistake: bool = False
+        self.mistake_button: QPushButton = QPushButton("Mistake")
+        self.mistake_button.setCheckable(True)
+        self.mistake_button.setObjectName("mistakeButton")
+        # Only the checked state is styled, so the unchecked button stays native; the
+        # margins match where macOS draws the native bezel inside the button, so the
+        # two states are the same size. Scoped by object name so the tooltip keeps
+        # its default look.
+        self.mistake_button.setStyleSheet(
+            f"#mistakeButton:checked {{ background-color: {MISTAKE_COLOR};"
+            " color: white; border-radius: 5px; margin: 4px 0px 5px 0px; }",
+        )
+        self.mistake_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.mistake_button.setToolTip(
+            "Mark the solve in progress, or else the last solve, as a mistake (M)",
+        )
+        self.mistake_button.clicked.connect(self.toggle_mistake)
+        header.addWidget(self.mistake_button)
         header.addWidget(self.back_button)
         self.right_column.insertLayout(0, header)
 
@@ -163,6 +194,42 @@ class TrainerPage(TimerPage):
         # A shortcut fires before the timer sees the key press, so → never stops a
         # running solve: a hint can be asked for mid-solve.
         self._add_shortcut(HINT_SHORTCUT, self.show_next_hint)
+        # Likewise M marks a mistake without ending the solve.
+        self._add_shortcut(MISTAKE_SHORTCUT, self.toggle_mistake)
+        self.timer.solve_started.connect(self._update_mistake_button)
+
+        self.case_stats: CaseStatsPanel = CaseStatsPanel(case_set, self.solves)
+        self.case_stats.setFixedWidth(CASE_STATS_WIDTH)
+        self.columns.insertWidget(1, self.case_stats)
+        self._update_mistake_button()
+
+    def toggle_mistake(self) -> None:
+        """Flip the mistake flag of the solve in progress, or else of the last solve.
+
+        A flag set during a solve is applied when the solve finishes.
+        """
+        if self.timer.machine.state is TimerState.RUNNING:
+            self._pending_mistake = not self._pending_mistake
+        elif self.solves:
+            last = self.solves.solves[-1]
+            self.solves.set_mistake(-1, mistake=not last.mistake)
+            self.refresh_solves()
+        self._update_mistake_button()
+
+    def _update_mistake_button(self) -> None:
+        """Show whether the solve the button acts on is marked as a mistake."""
+        if self.timer.machine.state is TimerState.RUNNING:
+            marked = self._pending_mistake
+        else:
+            marked = bool(self.solves) and self.solves.solves[-1].mistake
+        self.mistake_button.setChecked(marked)
+
+    @override
+    def refresh_solves(self) -> None:
+        """Redraw the solves table, the per-case table and the mistake button."""
+        super().refresh_solves()
+        self.case_stats.refresh()
+        self._update_mistake_button()
 
     def show_next_hint(self) -> None:
         """Reveal one more hint step: the case image and first move, then a move more.
@@ -227,14 +294,16 @@ class TrainerPage(TimerPage):
             scramble: The scramble shown when the solve started.
 
         Returns:
-            The new solve, with ``case_id`` set when the case is recognised and the
-            number of hint steps revealed for it.
+            The new solve, with ``case_id`` set when the case is recognised, the
+            number of hint steps revealed for it, and the mistake flag set during it.
 
         """
         case = self._recognizer.recognize(scramble)
+        mistake, self._pending_mistake = self._pending_mistake, False
         return Solve(
             time_ms=time_ms,
             scramble=scramble,
             case_id=case.id if case else None,
             hints=self.hints_shown,
+            mistake=mistake,
         )

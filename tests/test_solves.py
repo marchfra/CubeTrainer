@@ -7,6 +7,8 @@ import pytest
 
 from cubetrainer.formatting import (
     format_average,
+    format_flags,
+    format_percent,
     format_solve,
     format_solve_detailed,
     format_value,
@@ -83,3 +85,33 @@ def test_format_solve(penalty: Penalty, short: str, detailed: str) -> None:
 
     assert format_solve(solve) == short
     assert format_solve_detailed(solve) == detailed
+
+
+@pytest.mark.parametrize(
+    ("mistake", "hints", "flags"),
+    [(False, 0, ""), (True, 0, "✗"), (False, 3, "💡3"), (True, 1, "✗ 💡1")],
+)
+def test_format_flags(*, mistake: bool, hints: int, flags: str) -> None:
+    """Mistakes and hints show as markers."""
+    assert format_flags(Solve(1_000, "", mistake=mistake, hints=hints)) == flags
+
+
+def test_format_percent() -> None:
+    """Fractions become whole percentages."""
+    assert [format_percent(f) for f in (0, 1 / 3, 0.5, 1)] == [
+        "0%",
+        "33%",
+        "50%",
+        "100%",
+    ]
+
+
+def test_set_mistake() -> None:
+    """The list can flag and unflag a solve."""
+    solves = SolveList()
+    solves.add(Solve(1_000, ""))
+
+    solves.set_mistake(-1, mistake=True)
+    assert solves.solves[0].mistake
+    solves.set_mistake(0, mistake=False)
+    assert not solves.solves[0].mistake

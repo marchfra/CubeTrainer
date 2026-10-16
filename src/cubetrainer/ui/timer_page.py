@@ -68,6 +68,7 @@ class TimerPage(QWidget):
         scramble_bar: Shows the scramble to apply before the solve.
         timer: The spacebar-driven timer.
         right_column: Layout holding the scramble bar and the timer.
+        columns: The page's main layout: solves panel, then the right column.
         shortcuts: The keyboard shortcuts, keyed by key sequence string.
         confirm: Asks a yes/no question; replaceable in tests.
         run_dialog: Runs a dialog and returns its result; replaceable in tests.
@@ -117,9 +118,9 @@ class TimerPage(QWidget):
         self.right_column: QVBoxLayout = QVBoxLayout()
         self.right_column.addWidget(self.scramble_bar)
         self.right_column.addWidget(self.timer, stretch=1)
-        box = QHBoxLayout(self)
-        box.addWidget(self.solves_panel)
-        box.addLayout(self.right_column, stretch=1)
+        self.columns: QHBoxLayout = QHBoxLayout(self)
+        self.columns.addWidget(self.solves_panel)
+        self.columns.addLayout(self.right_column, stretch=1)
 
         self.shortcuts: dict[str, QShortcut] = {}
         for penalty, keys in PENALTY_SHORTCUTS.items():
@@ -148,7 +149,7 @@ class TimerPage(QWidget):
         """
         if self.solves:
             self.solves.set_penalty(-1, penalty)
-            self.solves_panel.refresh()
+            self.refresh_solves()
 
     def delete_last(self) -> None:
         """Delete the most recent solve, after asking for confirmation."""
@@ -157,7 +158,7 @@ class TimerPage(QWidget):
         last = format_solve(self.solves.solves[-1])
         if self.confirm(f"Delete the last solve ({last})?"):
             self.solves.delete(-1)
-            self.solves_panel.refresh()
+            self.refresh_solves()
 
     def show_solve(self, index: int) -> None:
         """Open the details dialog of a solve and apply what the user did there.
@@ -174,6 +175,11 @@ class TimerPage(QWidget):
         else:
             # The dialog edits the solve in place; go through the list so it's saved.
             self.solves.set_penalty(index, solve.penalty)
+            self.solves.set_mistake(index, mistake=solve.mistake)
+        self.refresh_solves()
+
+    def refresh_solves(self) -> None:
+        """Redraw everything showing the solves (subclasses add their own views)."""
         self.solves_panel.refresh()
 
     def case_name(self, case_id: str) -> str:
@@ -225,5 +231,5 @@ class TimerPage(QWidget):
 
         """
         self.solves.add(self.make_solve(time_ms, self._solve_scramble))
-        self.solves_panel.refresh()
+        self.refresh_solves()
         self.scramble_bar.show_new()
