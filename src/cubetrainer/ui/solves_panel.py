@@ -1,6 +1,8 @@
 """cstimer-style side panel: session summary on top, list of solves below."""
 
 import math
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import override
 
 from PySide6.QtCore import (
@@ -25,11 +27,32 @@ from cubetrainer import stats
 from cubetrainer.formatting import format_average, format_solve, format_value
 from cubetrainer.solves import SolveList
 
-#: Averages shown in the summary and as table columns.
-AVERAGE_SIZES: tuple[int, ...] = (5, 12)
 
-#: Table column headers.
-COLUMNS: tuple[str, ...] = ("#", "time", *(f"ao{n}" for n in AVERAGE_SIZES))
+@dataclass(frozen=True, slots=True)
+class PanelLayout:
+    """What the solves panel shows.
+
+    Attributes:
+        average_sizes: Averages shown in the summary and as table columns.
+        case_column: Whether the table has a column naming each solve's case.
+
+    """
+
+    average_sizes: tuple[int, ...] = (5, 12)
+    case_column: bool = False
+
+    @property
+    def columns(self) -> tuple[str, ...]:
+        """The table column headers, in order."""
+        case = ("case",) if self.case_column else ()
+        return ("#", "time", *case, *(f"ao{n}" for n in self.average_sizes))
+
+
+#: Layout of the full-solve timer: ao5 and ao12.
+TIMER_LAYOUT: PanelLayout = PanelLayout()
+
+#: Layout of the trainer: a case column; averages across different cases mean little.
+TRAINER_LAYOUT: PanelLayout = PanelLayout(average_sizes=(), case_column=True)
 
 type _AnyIndex = QModelIndex | QPersistentModelIndex
 
@@ -37,16 +60,25 @@ type _AnyIndex = QModelIndex | QPersistentModelIndex
 class SolvesTableModel(QAbstractTableModel):
     """Table of solves, newest first, with the rolling averages ending at each one."""
 
-    def __init__(self, solves: SolveList) -> None:
+    def __init__(
+        self,
+        solves: SolveList,
+        layout: PanelLayout = TIMER_LAYOUT,
+        case_name: Callable[[str], str] = str,
+    ) -> None:
         """Create the model.
 
         Args:
             solves: The solve list to display (not copied; call ``refresh`` after
                 changing it).
+            layout: Which columns to show.
+            case_name: Display name of a case id, for the case column.
 
         """
         super().__init__()
         self._solves: SolveList = solves
+        self._layout: PanelLayout = layout
+        self._case_name: Callable[[str], str] = case_name
         self._averages: dict[int, list[float | None]] = {}
         self.refresh()
 
@@ -54,7 +86,9 @@ class SolvesTableModel(QAbstractTableModel):
         """Recompute the rolling averages and redraw the whole table."""
         self.beginResetModel()
         values = self._solves.values()
-        self._averages = {n: stats.rolling_averages(values, n) for n in AVERAGE_SIZES}
+        self._averages = {
+            n: stats.rolling_averages(values, n) for n in self._layout.average_sizes
+        }
         self.endResetModel()
 
     def solve_index(self, row: int) -> int:
@@ -97,7 +131,7 @@ class SolvesTableModel(QAbstractTableModel):
         """
         if parent is not None and parent.isValid():
             return 0
-        return len(COLUMNS)
+        return len(self._layout.columns)
 
     @override
     def data(
@@ -122,13 +156,29 @@ class SolvesTableModel(QAbstractTableModel):
             return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         if role != Qt.ItemDataRole.DisplayRole:
             return None
-        i = self.solve_index(index.row())
-        column = index.column()
-        if column == 0:
-            return str(i + 1)
-        if column == 1:
-            return format_solve(self._solves.solves[i])
-        return format_average(self._averages[AVERAGE_SIZES[column - 2]][i])
+        return self._cell_text(index.row(), self._layout.columns[index.column()])
+
+    def _cell_text(self, row: int, header: str) -> str:
+        """Return the text of one cell.
+
+        Args:
+            row: Table row (0 is the newest solve).
+            header: The cell's column header.
+
+        Returns:
+            The text to display.
+
+        """
+        i = self.solve_index(row)
+        solve = self._solves.solves[i]
+        texts: dict[str, Callable[[], str]] = {
+            "#": lambda: str(i + 1),
+            "time": lambda: format_solve(solve),
+            "case": lambda: self._case_name(solve.case_id) if solve.case_id else "",
+        }
+        if header in texts:
+            return texts[header]()
+        return format_average(self._averages[int(header.removeprefix("ao"))][i])
 
     @override
     def headerData(
@@ -152,7 +202,7 @@ class SolvesTableModel(QAbstractTableModel):
             orientation == Qt.Orientation.Horizontal
             and role == Qt.ItemDataRole.DisplayRole
         ):
-            return COLUMNS[section]
+            return self._layout.columns[section]
         return None
 
 
@@ -166,14 +216,20 @@ class SummaryPanel(QWidget):
 
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        average_sizes: tuple[int, ...] = TIMER_LAYOUT.average_sizes,
+        parent: QWidget | None = None,
+    ) -> None:
         """Create the grid with empty values.
 
         Args:
+            average_sizes: Averages to show a row for, below the single time.
             parent: Optional parent widget.
 
         """
         super().__init__(parent)
+        self._average_sizes: tuple[int, ...] = average_sizes
         grid = QGridLayout(self)
         bold = QFont()
         bold.setBold(True)
@@ -184,7 +240,7 @@ class SummaryPanel(QWidget):
             grid.addWidget(header, 0, col)
 
         self.cells: dict[tuple[str, str], QLabel] = {}
-        row_names = ["time", *(f"ao{n}" for n in AVERAGE_SIZES)]
+        row_names = ["time", *(f"ao{n}" for n in average_sizes)]
         for row, name in enumerate(row_names, start=1):
             grid.addWidget(QLabel(name), row, 0)
             for col, kind in enumerate(("current", "best"), start=1):
@@ -208,7 +264,7 @@ class SummaryPanel(QWidget):
             format_value(values[-1] if values else None),
         )
         self.cells["time", "best"].setText(format_value(stats.best_single(values)))
-        for n in AVERAGE_SIZES:
+        for n in self._average_sizes:
             current = stats.current_average(values, n)
             self.cells[f"ao{n}", "current"].setText(format_average(current))
             best = stats.best_average(values, n)
@@ -231,18 +287,26 @@ class SolvesPanel(QWidget):
 
     solve_activated = Signal(int)
 
-    def __init__(self, solves: SolveList, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        solves: SolveList,
+        layout: PanelLayout = TIMER_LAYOUT,
+        case_name: Callable[[str], str] = str,
+        parent: QWidget | None = None,
+    ) -> None:
         """Create the panel.
 
         Args:
             solves: The session's solves.
+            layout: Which statistics and columns to show.
+            case_name: Display name of a case id, for the case column.
             parent: Optional parent widget.
 
         """
         super().__init__(parent)
         self._solves: SolveList = solves
-        self.summary: SummaryPanel = SummaryPanel()
-        self.model: SolvesTableModel = SolvesTableModel(solves)
+        self.summary: SummaryPanel = SummaryPanel(layout.average_sizes)
+        self.model: SolvesTableModel = SolvesTableModel(solves, layout, case_name)
 
         self.table: QTableView = QTableView()
         self.table.setModel(self.model)
@@ -255,10 +319,10 @@ class SolvesPanel(QWidget):
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.table.clicked.connect(self._on_clicked)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.summary)
-        layout.addWidget(self.table, stretch=1)
+        box = QVBoxLayout(self)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(self.summary)
+        box.addWidget(self.table, stretch=1)
         self.refresh()
 
     def refresh(self) -> None:

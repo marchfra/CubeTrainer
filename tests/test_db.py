@@ -201,3 +201,12 @@ def test_case_statuses_round_trip(db: Database) -> None:
         "T": CaseStatus.FINISHED,
         "Ua": CaseStatus.LEARNING,
     }
+
+
+def test_case_id_round_trip(db: Database) -> None:
+    """Trainer solves keep their case; full solves have none."""
+    session = db.get_or_create_session("trainer:pll")
+    db.add_solve(session, Solve(1_000, "R U", case_id="T"))
+    db.add_solve(session, Solve(2_000, "R U"))
+
+    assert [s.case_id for s in db.load_solves(session)] == ["T", None]

@@ -3,21 +3,22 @@
 from typing import override
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QMouseEvent, QPixmap
+from PySide6.QtGui import QFont, QMouseEvent
 from PySide6.QtWidgets import (
-    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QMenu,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from cubetrainer.cases.catalog import Case, CaseSet, CaseStatus, load_case_set
-from cubetrainer.cube.render import render_last_layer
 from cubetrainer.db import Database
+from cubetrainer.ui.case_images import case_pixmap
 
 #: Case sets offered in the set picker, by id.
 AVAILABLE_SETS: tuple[str, ...] = ("pll",)
@@ -31,9 +32,6 @@ STATUS_COLORS: dict[CaseStatus, str] = {
 
 #: Displayed size of case images, in logical pixels.
 IMAGE_SIZE: int = 96
-
-#: Images are rendered at this multiple of their size so they stay sharp on Retina.
-_RENDER_SCALE: int = 2
 
 _COLUMN_TITLES: tuple[str, ...] = ("Case", "Name", "Algorithm", "Group")
 
@@ -59,10 +57,7 @@ class CaseImage(QLabel):
 
         """
         super().__init__()
-        image = render_last_layer(case.state(), IMAGE_SIZE * _RENDER_SCALE)
-        pixmap = QPixmap.fromImage(image)
-        pixmap.setDevicePixelRatio(_RENDER_SCALE)
-        self.setPixmap(pixmap)
+        self.setPixmap(case_pixmap(case, IMAGE_SIZE))
         self.setFixedSize(IMAGE_SIZE + 12, IMAGE_SIZE + 12)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -170,13 +165,18 @@ class CaseList(QWidget):
 
 
 class LearnPage(QWidget):
-    """Set picker above a scrollable case list.
+    """Set picker and Train button above a scrollable case list.
 
     Attributes:
-        set_picker: Chooses which case set to show.
+        train_requested: Emitted with a set id when the user wants to train it.
+        set_picker: Button showing the current set; clicking it opens ``set_menu``.
+        set_menu: Menu choosing which set to show.
+        train_button: Starts the trainer for the selected set.
         case_list: The list for the selected set.
 
     """
+
+    train_requested = Signal(str)
 
     def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         """Create the page showing the first available set.
@@ -188,11 +188,23 @@ class LearnPage(QWidget):
         """
         super().__init__(parent)
         self._db: Database = db
-        self.set_picker: QComboBox = QComboBox()
-        for set_id in AVAILABLE_SETS:
-            self.set_picker.addItem(load_case_set(set_id).name, set_id)
+        # A plain push button that pops up a menu, rather than a combo box or a
+        # push button with an attached menu: macOS draws those 1-2 px higher than a
+        # plain push button, so next to the Train button they look misaligned.
+        self.set_picker: QPushButton = QPushButton()
         self.set_picker.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.set_picker.currentIndexChanged.connect(self._show_selected_set)
+        self.set_menu: QMenu = QMenu(self.set_picker)
+        for set_id in AVAILABLE_SETS:
+            self.set_menu.addAction(
+                load_case_set(set_id).name,
+                lambda sid=set_id: self.select_set(sid),
+            )
+        self.set_picker.clicked.connect(self._pop_up_set_menu)
+        self.train_button: QPushButton = QPushButton()
+        self.train_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.train_button.clicked.connect(
+            lambda: self.train_requested.emit(self.case_list.case_set.id),
+        )
 
         self._scroll: QScrollArea = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -201,6 +213,7 @@ class LearnPage(QWidget):
         top = QHBoxLayout()
         top.addWidget(QLabel("Set:"))
         top.addWidget(self.set_picker)
+        top.addWidget(self.train_button)
         top.addStretch()
         hint = QLabel("Click a case image to cycle unlearned → learning → finished")
         top.addWidget(hint)
@@ -210,17 +223,31 @@ class LearnPage(QWidget):
         layout.addWidget(self._scroll, stretch=1)
 
         self.case_list: CaseList = CaseList(load_case_set(AVAILABLE_SETS[0]), db)
-        self._scroll.setWidget(self.case_list)
+        self._show_case_list(self.case_list)
 
-    def _show_selected_set(self, index: int) -> None:
-        """Replace the case list with the set chosen in the picker.
+    def _pop_up_set_menu(self) -> None:
+        """Show the set menu just below the picker."""
+        self.set_menu.popup(
+            self.set_picker.mapToGlobal(self.set_picker.rect().bottomLeft()),
+        )
+
+    def select_set(self, set_id: str) -> None:
+        """Show the cases of another set.
 
         Args:
-            index: Index of the chosen set in the picker.
+            set_id: The set to show, e.g. ``"pll"``.
 
         """
-        self.case_list = CaseList(
-            load_case_set(self.set_picker.itemData(index)),
-            self._db,
-        )
-        self._scroll.setWidget(self.case_list)
+        self._show_case_list(CaseList(load_case_set(set_id), self._db))
+
+    def _show_case_list(self, case_list: CaseList) -> None:
+        """Display a case list and label the picker and Train button for its set.
+
+        Args:
+            case_list: The list to show.
+
+        """
+        self.case_list = case_list
+        self._scroll.setWidget(case_list)
+        self.set_picker.setText(f"{case_list.case_set.name}  ▾")
+        self.train_button.setText(f"Train {case_list.case_set.name}")

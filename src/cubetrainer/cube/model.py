@@ -327,7 +327,12 @@ class CubeState:
 SOLVED: CubeState = CubeState()
 
 
-def state_solved_by(moves: Sequence[Move]) -> CubeState:
+def state_solved_by(
+    moves: Sequence[Move],
+    *,
+    before: Sequence[Move] = (),
+    after: Sequence[Move] = (),
+) -> CubeState:
     """Return the state, held in standard orientation, that ``moves`` solve.
 
     For algorithms without net rotation this is just the inverse applied to a solved
@@ -335,16 +340,27 @@ def state_solved_by(moves: Sequence[Move]) -> CubeState:
     inverse is applied starting from the matching rotated solved cube; that way the
     case appears in the orientation the solver holds the cube before starting.
 
+    ``before`` and ``after`` (typically AUFs) are done in the standard orientation:
+    ``before`` right before the algorithm, ``after`` once the cube has been rotated
+    back after it. So the returned state is solved by ``before``, then ``moves``,
+    then undoing the algorithm's rotation, then ``after``.
+
     Args:
         moves: An algorithm that solves the returned state (rotations allowed).
+        before: Moves done before the algorithm.
+        after: Moves done after the algorithm, in the standard orientation.
 
     Returns:
         The state with every centre on its home face.
 
     """
-    undo = invert_alg(moves)
+    undo_after, undo_moves, undo_before = (
+        invert_alg(after),
+        invert_alg(moves),
+        invert_alg(before),
+    )
     for rotation in _all_orientations():
-        candidate = SOLVED.apply([*rotation, *undo])
+        candidate = SOLVED.apply([*undo_after, *rotation, *undo_moves, *undo_before])
         if all(candidate.stickers[i] == i for i in _CENTERS):
             return candidate
     msg = "no rotation restores the centres"  # unreachable: rotations form a group

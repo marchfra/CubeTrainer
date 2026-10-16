@@ -14,9 +14,10 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QMessageBox, QVBoxLayout, QW
 from cubetrainer.cube.scramble import random_state_scramble
 from cubetrainer.formatting import format_solve
 from cubetrainer.solves import Penalty, Solve, SolveList
+from cubetrainer.ui.case_images import CaseInfo
 from cubetrainer.ui.scramble_bar import ScrambleBar
 from cubetrainer.ui.solve_dialog import SolveDialog
-from cubetrainer.ui.solves_panel import SolvesPanel
+from cubetrainer.ui.solves_panel import TIMER_LAYOUT, PanelLayout, SolvesPanel
 from cubetrainer.ui.timer_widget import TimerWidget
 
 #: Keyboard shortcut for each penalty on the last solve. "Ctrl" is Cmd on macOS.
@@ -59,18 +60,22 @@ def ask_confirmation(parent: QWidget, question: str) -> bool:
 
 
 class TimerPage(QWidget):
-    """Full-solve timer page.
+    """Full-solve timer page; also the base of the trainer page.
 
     Attributes:
         solves: The solves done in this session.
         solves_panel: Summary and table of solves.
         scramble_bar: Shows the scramble to apply before the solve.
         timer: The spacebar-driven timer.
+        right_column: Layout holding the scramble bar and the timer.
         shortcuts: The keyboard shortcuts, keyed by key sequence string.
         confirm: Asks a yes/no question; replaceable in tests.
         run_dialog: Runs a dialog and returns its result; replaceable in tests.
+        PANEL_LAYOUT: Statistics and columns of the solves panel.
 
     """
+
+    PANEL_LAYOUT: PanelLayout = TIMER_LAYOUT
 
     def __init__(
         self,
@@ -94,7 +99,12 @@ class TimerPage(QWidget):
         self.run_dialog: Callable[[QDialog], int] = lambda d: d.exec()
         self._solve_scramble: str = ""
 
-        self.solves_panel: SolvesPanel = SolvesPanel(self.solves)
+        self.solves_panel: SolvesPanel = SolvesPanel(
+            self.solves,
+            self.PANEL_LAYOUT,
+            # A bound method is looked up per call, so subclasses' attributes exist.
+            self.case_name,
+        )
         self.solves_panel.setFixedWidth(_SOLVES_PANEL_WIDTH)
         self.solves_panel.solve_activated.connect(self.show_solve)
         self.scramble_bar: ScrambleBar = ScrambleBar(
@@ -104,12 +114,12 @@ class TimerPage(QWidget):
         self.timer.solve_started.connect(self._on_solve_started)
         self.timer.solve_finished.connect(self._on_solve_finished)
 
-        right = QVBoxLayout()
-        right.addWidget(self.scramble_bar)
-        right.addWidget(self.timer, stretch=1)
-        layout = QHBoxLayout(self)
-        layout.addWidget(self.solves_panel)
-        layout.addLayout(right, stretch=1)
+        self.right_column: QVBoxLayout = QVBoxLayout()
+        self.right_column.addWidget(self.scramble_bar)
+        self.right_column.addWidget(self.timer, stretch=1)
+        box = QHBoxLayout(self)
+        box.addWidget(self.solves_panel)
+        box.addLayout(self.right_column, stretch=1)
 
         self.shortcuts: dict[str, QShortcut] = {}
         for penalty, keys in PENALTY_SHORTCUTS.items():
@@ -157,13 +167,51 @@ class TimerPage(QWidget):
 
         """
         solve = self.solves.solves[index]
-        dialog = SolveDialog(solve, index + 1, self)
+        case = self.case_info(solve.case_id) if solve.case_id else None
+        dialog = SolveDialog(solve, index + 1, case=case, parent=self)
         if self.run_dialog(dialog) == SolveDialog.DELETED:
             self.solves.delete(index)
         else:
             # The dialog edits the solve in place; go through the list so it's saved.
             self.solves.set_penalty(index, solve.penalty)
         self.solves_panel.refresh()
+
+    def case_name(self, case_id: str) -> str:
+        """Return the display name of a case (subclasses with cases override this).
+
+        Args:
+            case_id: The case id.
+
+        Returns:
+            The name to show.
+
+        """
+        return case_id
+
+    def case_info(self, case_id: str) -> CaseInfo | None:  # noqa: ARG002
+        """Return what the solve dialog shows about a case (trainers override this).
+
+        Args:
+            case_id: The case id.
+
+        Returns:
+            None: full solves have no case.
+
+        """
+        return None
+
+    def make_solve(self, time_ms: int, scramble: str) -> Solve:
+        """Build the record of a finished solve (subclasses add details).
+
+        Args:
+            time_ms: The solve time in milliseconds.
+            scramble: The scramble shown when the solve started.
+
+        Returns:
+            The new solve.
+
+        """
+        return Solve(time_ms=time_ms, scramble=scramble)
 
     def _on_solve_started(self) -> None:
         """Remember the scramble shown when the solve started."""
@@ -176,6 +224,6 @@ class TimerPage(QWidget):
             time_ms: The solve time in milliseconds.
 
         """
-        self.solves.add(Solve(time_ms=time_ms, scramble=self._solve_scramble))
+        self.solves.add(self.make_solve(time_ms, self._solve_scramble))
         self.solves_panel.refresh()
         self.scramble_bar.show_new()

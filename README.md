@@ -33,7 +33,17 @@ and averages and means are rounded to the nearest hundredth.
 - Click a case image to cycle its status: unlearned → learning → finished (shown as
   the image's background colour, and named on hover). Statuses are saved.
 
-**Trainer** and **Stats** tab: coming soon.
+**Trainer** (Learn → *Train PLL*)
+
+- Opens in the Timer tab (← *Full timer* goes back). Each scramble sets up a PLL
+  case picked with equal probability, with random U turns before and after it.
+  Scrambles are random-state style, so they don't give away the algorithm.
+- The solves table has a case column, and the solve dialog shows the case's name
+  and image. The case is recognised from the scramble itself.
+- Trainer solves are stored in their own session, separate from full solves.
+- The same shortcuts work (⌘1/⌘2/⌘3, ⌘Z). No inspection.
+
+**Stats** tab: coming soon.
 
 ## Requirements
 
@@ -91,8 +101,9 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
       cases/
         catalog.py         case sets, cases, learning status
         recognition.py     identify PLL cases regardless of AUF
+        trainer.py         case scrambles and recognising them
         data/pll.json      bundled PLL cases and default algorithms
-      ui/                  Qt widgets: main window, timer page, panels, dialogs
+      ui/                  Qt widgets: main window, timer/trainer/learn pages, dialogs
     tests/                 pytest + pytest-qt
 
 ## License

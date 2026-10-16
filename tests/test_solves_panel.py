@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt
 from pytestqt.qtbot import QtBot
 
 from cubetrainer.solves import Penalty, Solve, SolveList
-from cubetrainer.ui.solves_panel import COLUMNS, SolvesPanel
+from cubetrainer.ui.solves_panel import TIMER_LAYOUT, TRAINER_LAYOUT, SolvesPanel
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def cell(panel: SolvesPanel, row: int, column: int) -> str:
 def test_table_lists_newest_first_with_rolling_averages(panel: SolvesPanel) -> None:
     """Rows go newest to oldest; ao5 appears from the fifth solve; ao12 is missing."""
     assert [panel.model.headerData(i, Qt.Orientation.Horizontal) for i in range(4)] == [
-        *COLUMNS,
+        *TIMER_LAYOUT.columns,
     ]
     assert panel.model.rowCount() == 6
     # Newest: the DNF, whose ao5 is (12 + 13 + 14) / 3 after trimming 11 and the DNF.
@@ -129,3 +129,19 @@ def test_averages_are_rounded_but_singles_truncated(qtbot: QtBot) -> None:
     assert cell(panel, 1, 2) == "11.61"  # (12.34 + 10.98 + 11.50) / 3 = 11.6067
     assert cell(panel, 0, 1) == "12.34"
     assert panel.summary.cells["ao5", "best"].text() == "11.61"
+
+
+def test_trainer_layout_shows_case_names(qtbot: QtBot) -> None:
+    """The trainer table has a case column and no averages."""
+    solve_list = SolveList()
+    solve_list.add(Solve(2_000, "", case_id="Ua"))
+    solve_list.add(Solve(3_000, ""))
+    panel = SolvesPanel(solve_list, TRAINER_LAYOUT, case_name=lambda cid: f"{cid}-perm")
+    qtbot.addWidget(panel)
+
+    assert TRAINER_LAYOUT.columns == ("#", "time", "case")
+    assert panel.model.columnCount() == 3
+    assert [cell(panel, 1, c) for c in range(3)] == ["1", "2.00", "Ua-perm"]
+    assert cell(panel, 0, 2) == ""
+    assert ("ao5", "current") not in panel.summary.cells
+    assert panel.summary.mean_label.text() == "solves: 2/2    mean: 2.50"

@@ -31,7 +31,8 @@ def test_lists_all_pll_cases(qtbot: QtBot) -> None:
     """Every PLL case gets an image, and all start unlearned."""
     page = make_page(qtbot, Database(":memory:"))
 
-    assert page.set_picker.currentText() == "PLL"
+    assert page.set_picker.text() == "PLL  ▾"
+    assert [a.text() for a in page.set_menu.actions()] == ["PLL"]
     assert len(page.case_list.images) == 21
     assert set(page.case_list.statuses.values()) == {CaseStatus.UNLEARNED}
 
@@ -92,3 +93,26 @@ def test_statuses_survive_restart(qtbot: QtBot, tmp_path: Path) -> None:
     assert statuses["Jb"] is CaseStatus.FINISHED
     assert statuses["T"] is CaseStatus.UNLEARNED
     assert "finished" in reopened.case_list.images["Jb"].toolTip()
+
+
+def test_set_picker_opens_menu(qtbot: QtBot) -> None:
+    """Clicking the set picker pops up the set menu below it."""
+    page = make_page(qtbot, Database(":memory:"))
+
+    qtbot.mouseClick(page.set_picker, Qt.MouseButton.LeftButton)
+
+    qtbot.waitUntil(page.set_menu.isVisible)
+    picker_bottom = page.set_picker.mapToGlobal(page.set_picker.rect().bottomLeft())
+    assert page.set_menu.pos().y() >= picker_bottom.y() - 1
+    page.set_menu.hide()
+
+
+def test_selecting_a_set_relabels_buttons(qtbot: QtBot) -> None:
+    """Choosing a set from the menu updates the picker and the Train button."""
+    page = make_page(qtbot, Database(":memory:"))
+
+    page.set_menu.actions()[0].trigger()
+
+    assert page.set_picker.text() == "PLL  ▾"
+    assert page.train_button.text() == "Train PLL"
+    assert page.case_list.case_set.id == "pll"

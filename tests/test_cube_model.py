@@ -141,3 +141,14 @@ def test_state_solved_by_rotation_matches_rotation_free_alg() -> None:
     without = state_solved_by(parse_alg("R' F R' B2 R F' R' B2 R2"))
 
     assert with_rotation == without
+
+
+def test_state_solved_by_aufs_are_in_standard_orientation() -> None:
+    """With a rotation-based alg, before/after U turns still turn the top layer."""
+    moves = parse_alg("x R' U R' D2 R U' R' D2 R2")
+    before, after = parse_alg("U"), parse_alg("U2")
+
+    state = state_solved_by(moves, before=before, after=after)
+
+    # Solved by: before, the alg, rotating back (x'), then after.
+    assert state.apply([*before, *moves, *parse_alg("x'"), *after]) == SOLVED

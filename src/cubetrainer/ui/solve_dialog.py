@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from cubetrainer.formatting import format_solve_detailed
 from cubetrainer.solves import Penalty, Solve
+from cubetrainer.ui.case_images import CaseInfo
 
 #: Radio button label for each penalty.
 PENALTY_LABELS: dict[Penalty, str] = {
@@ -23,6 +24,9 @@ PENALTY_LABELS: dict[Penalty, str] = {
     Penalty.PLUS_TWO: "+2",
     Penalty.DNF: "DNF",
 }
+
+#: Minimum dialog width, so a full scramble fits on one or two lines.
+_MIN_WIDTH: int = 380
 
 
 class SolveDialog(QDialog):
@@ -46,6 +50,7 @@ class SolveDialog(QDialog):
         self,
         solve: Solve,
         number: int,
+        case: CaseInfo | None = None,
         parent: QWidget | None = None,
     ) -> None:
         """Create the dialog.
@@ -53,12 +58,14 @@ class SolveDialog(QDialog):
         Args:
             solve: The solve to show (its penalty is updated in place).
             number: The solve's 1-based number in the session, for the title.
+            case: Name and image of the solve's case, for trainer solves.
             parent: Optional parent widget.
 
         """
         super().__init__(parent)
         self._solve: Solve = solve
         self.setWindowTitle(f"Solve #{number}")
+        self.setMinimumWidth(_MIN_WIDTH)
 
         self.time_label: QLabel = QLabel()
         font = QFont()
@@ -96,6 +103,17 @@ class SolveDialog(QDialog):
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
+        if case is not None:
+            image = QLabel()
+            image.setPixmap(case.image)
+            layout.addWidget(image, alignment=Qt.AlignmentFlag.AlignHCenter)
+            case_label = QLabel(f"Case: {case.name}")
+            case_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            case_font = QFont()
+            case_font.setPointSize(18)
+            case_font.setBold(True)
+            case_label.setFont(case_font)
+            layout.addWidget(case_label)
         layout.addWidget(self.time_label)
         layout.addWidget(date_label)
         layout.addWidget(scramble_label)
