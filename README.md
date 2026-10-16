@@ -10,6 +10,10 @@ Built with Python and PySide6.
 
 - Spacebar timer: hold until the display turns green (0.3 s), release to start, press
   any key to stop. Modifier keys (e.g. Cmd+Tab) don't stop a solve; Esc cancels a hold.
+- WCA inspection (*Options ▾*, on by default): the first press starts a 15 s
+  countdown (or, with *Hold space to start inspection*, a hold until green does);
+  starting after 15 s is +2, after 17 s DNF. Optional beeps at 8 s (one) and 12 s
+  (two), like a judge's calls. Esc cancels inspection.
 - WCA-style random-state scrambles (two-phase solver) with ◀ previous / ▶ next / Copy.
 - Solves table (newest first) with rolling ao5 and ao12, plus a summary of current and
   best single / ao5 / ao12, solve count and session mean.
@@ -77,7 +81,8 @@ and averages and means are rounded to the nearest hundredth.
   case trained, sortable by any column. Best/avg/ao5 leave out mistakes; hinted
   solves count. The summary's best and mean leave out mistakes too.
 - The Learn tab shows each case's best and average trainer time.
-- The same shortcuts work (⌘1/⌘2/⌘3, ⌘Z). No inspection.
+- The same shortcuts work (⌘1/⌘2/⌘3, ⌘Z). Inspection is off by default; the
+  trainer has its own *Options ▾* toggle, separate from the full timer's.
 
 **Stats** tab: coming soon.
 
@@ -126,6 +131,9 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
     src/cubetrainer/
       app.py               entry point
       timing.py            timer state machine (Qt-free)
+      inspection.py        inspection countdown, penalties and warnings
+      sound.py             generated inspection beeps
+      settings.py          key-value settings
       solves.py            Solve, Penalty, SolveList
       stats.py             averages, means, bests
       formatting.py        time / solve display strings

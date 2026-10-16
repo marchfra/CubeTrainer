@@ -17,11 +17,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from cubetrainer.inspection import inspection_text, warnings_between
 from cubetrainer.timing import TimerMachine, TimerState, format_ms
 
 #: Display colour for each state; an empty string means the default text colour.
 STATE_COLORS: dict[TimerState, str] = {
     TimerState.IDLE: "",
+    TimerState.INSPECTING: "",
     TimerState.HOLDING: "#e5484d",
     TimerState.READY: "#30a46c",
     TimerState.RUNNING: "",
@@ -50,6 +52,19 @@ MODIFIER_KEYS: frozenset[Qt.Key] = frozenset(
 
 _REFRESH_INTERVAL_MS: int = 10
 
+#: How-to text without inspection.
+HINT_TEXT: str = "Hold space until green, release to start, press any key to stop"
+
+#: How-to text when inspection also starts with a hold.
+HOLD_INSPECTION_HINT_TEXT: str = (
+    "Hold space until green to start inspection, then again to start the solve"
+)
+
+#: How-to text with inspection.
+INSPECTION_HINT_TEXT: str = (
+    "Press space to start inspection, then hold it until green and release to start"
+)
+
 
 class TimerWidget(QWidget):
     """Large time display controlled by the keyboard.
@@ -61,14 +76,19 @@ class TimerWidget(QWidget):
 
     Attributes:
         solve_started: Emitted when the timer starts running.
-        solve_finished: Emitted with the solve time in milliseconds when a solve ends.
+        solve_finished: Emitted when a solve ends, with its time in milliseconds and
+            the value of its inspection ``Penalty``.
+        inspection_warning: Emitted with 8000 or 12000 when inspection reaches 8 or
+            12 seconds.
         machine: The underlying state machine.
         display: The label showing the time.
+        hint: How-to text under the time.
 
     """
 
     solve_started = Signal()
-    solve_finished = Signal(int)
+    solve_finished = Signal(int, str)
+    inspection_warning = Signal(int)
 
     def __init__(
         self,
@@ -85,6 +105,7 @@ class TimerWidget(QWidget):
         super().__init__(parent)
         self._clock: Callable[[], int] = clock
         self.machine: TimerMachine = TimerMachine()
+        self._warned_up_to_ms: int = -1
 
         self.display: QLabel = QLabel(format_ms(0))
         self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -94,13 +115,13 @@ class TimerWidget(QWidget):
         font.setFeature(QFont.Tag("tnum"), 1)
         self.display.setFont(font)
 
-        hint = QLabel("Hold space until green, release to start, press any key to stop")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint: QLabel = QLabel(HINT_TEXT)
+        self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout = QVBoxLayout(self)
         layout.addStretch()
         layout.addWidget(self.display)
-        layout.addWidget(hint)
+        layout.addWidget(self.hint)
         layout.addStretch()
 
         self._refresh_timer: QTimer = QTimer(self)
@@ -111,22 +132,51 @@ class TimerWidget(QWidget):
         if app is not None:
             app.installEventFilter(self)
 
+    def set_inspection(self, *, enabled: bool, hold: bool = False) -> None:
+        """Turn inspection on or off, updating the how-to text.
+
+        Args:
+            enabled: Whether a press first begins a 15 s inspection.
+            hold: Whether starting inspection needs a hold until green too.
+
+        """
+        self.machine.inspection = enabled
+        self.machine.hold_to_inspect = hold
+        if not enabled:
+            self.hint.setText(HINT_TEXT)
+        else:
+            self.hint.setText(
+                HOLD_INSPECTION_HINT_TEXT if hold else INSPECTION_HINT_TEXT,
+            )
+
     def refresh(self) -> None:
         """Advance the state machine and repaint the display."""
         now = self._clock()
         self.machine.update(now)
         state = self.machine.state
-        if state is TimerState.HOLDING or state is TimerState.READY:
+        inspected = self.machine.inspection_elapsed_ms(now)
+        if inspected is not None:
+            # Counting down, also while holding (red, then green), like cstimer.
+            self.display.setText(inspection_text(inspected))
+            for warning in warnings_between(self._warned_up_to_ms, inspected):
+                self.inspection_warning.emit(warning)
+            self._warned_up_to_ms = inspected
+        elif self.machine.arming_inspection:
+            # Holding to start inspection: show the full inspection time.
+            self.display.setText(inspection_text(0))
+        elif state is TimerState.HOLDING or state is TimerState.READY:
             # cstimer shows 0.00 while arming the timer.
             self.display.setText(format_ms(0))
         else:
             self.display.setText(format_ms(self.machine.elapsed_ms(now)))
+        if inspected is None:
+            self._warned_up_to_ms = -1
         color = STATE_COLORS[state]
         self.display.setStyleSheet(f"color: {color};" if color else "")
-        if state in {TimerState.HOLDING, TimerState.READY, TimerState.RUNNING}:
-            self._refresh_timer.start()
-        else:
+        if state is TimerState.IDLE or state is TimerState.STOPPED:
             self._refresh_timer.stop()
+        else:
+            self._refresh_timer.start()
 
     def _should_capture(self) -> bool:
         """Decide whether keyboard events should go to the timer.
@@ -177,6 +227,7 @@ class TimerWidget(QWidget):
         is_space = event.key() == Qt.Key.Key_Space
         state = self.machine.state
         if event.key() == Qt.Key.Key_Escape and state in {
+            TimerState.INSPECTING,
             TimerState.HOLDING,
             TimerState.READY,
         }:
@@ -193,7 +244,7 @@ class TimerWidget(QWidget):
         if is_press:
             result = self.machine.key_down(now, is_start_key=is_space)
             if result is not None:
-                self.solve_finished.emit(result)
+                self.solve_finished.emit(result, self.machine.last_penalty.value)
         else:
             self.machine.key_up(now, is_start_key=is_space)
             if self.machine.state is TimerState.RUNNING:

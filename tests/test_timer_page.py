@@ -9,10 +9,12 @@ from PySide6.QtWidgets import QDialog, QPushButton
 from pytestqt.qtbot import QtBot
 
 from cubetrainer.db import Database, StoredSolveList
+from cubetrainer.settings import MemorySettings
 from cubetrainer.solves import Penalty
 from cubetrainer.ui.sizing import reserve_width
 from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.timer_page import TimerPage
+from cubetrainer.ui.timer_widget import HINT_TEXT, INSPECTION_HINT_TEXT
 from tests.helpers import FakeClock, do_solve
 
 
@@ -245,3 +247,76 @@ def test_dialog_penalty_change_is_saved(qtbot: QtBot, clock: FakeClock) -> None:
     page.show_solve(0)
 
     assert [s.penalty for s in db.load_solves(session)] == [Penalty.DNF]
+
+
+def test_inspection_options_default_and_persist(qtbot: QtBot) -> None:
+    """The full timer starts with inspection and beeps on; changes are saved."""
+    settings = MemorySettings()
+    page = TimerPage(generate=lambda: "s", settings=settings)
+    qtbot.addWidget(page)
+
+    assert page.inspection_action.isChecked()
+    assert page.audio_action.isChecked()
+    assert page.timer.machine.inspection
+
+    assert page.timer.hint.text() == INSPECTION_HINT_TEXT
+
+    page.inspection_action.setChecked(False)
+    assert not page.timer.machine.inspection
+    assert page.timer.hint.text() == HINT_TEXT
+    assert not page.audio_action.isEnabled()  # beeps need inspection
+    assert settings.values["timer.inspection"] == "0"
+
+    again = TimerPage(generate=lambda: "s", settings=settings)
+    qtbot.addWidget(again)
+    assert not again.inspection_action.isChecked()
+
+
+@pytest.mark.parametrize("audio", [True, False])
+def test_warnings_beep_only_when_enabled(qtbot: QtBot, *, audio: bool) -> None:
+    """Warnings play a sound only with beeps turned on."""
+    page = TimerPage(generate=lambda: "s")
+    qtbot.addWidget(page)
+    played: list[int] = []
+    page.play_warning = played.append
+    page.audio_action.setChecked(audio)
+
+    page.timer.inspection_warning.emit(8_000)
+
+    assert played == ([8_000] if audio else [])
+
+
+def test_late_start_is_recorded_as_plus_two(
+    qtbot: QtBot,
+    page: TimerPage,
+    clock: FakeClock,
+) -> None:
+    """A solve started after 15 s of inspection is saved with +2."""
+    page.inspection_action.setChecked(True)
+    qtbot.keyPress(page, Qt.Key.Key_Space)
+    qtbot.keyRelease(page, Qt.Key.Key_Space)
+    clock.advance_ms(15_500)
+    qtbot.keyPress(page, Qt.Key.Key_Space)
+    clock.advance_ms(300)
+    qtbot.keyRelease(page, Qt.Key.Key_Space)
+    clock.advance_ms(10_000)
+    qtbot.keyPress(page, Qt.Key.Key_Space)
+
+    assert page.solves.solves[-1].penalty is Penalty.PLUS_TWO
+    assert page.solves_panel.model.data(page.solves_panel.model.index(0, 1)) == "12.00+"
+
+
+def test_hold_to_inspect_option(qtbot: QtBot) -> None:
+    """Holding to start inspection is off by default, saved, and needs inspection."""
+    settings = MemorySettings()
+    page = TimerPage(generate=lambda: "s", settings=settings)
+    qtbot.addWidget(page)
+    assert not page.hold_action.isChecked()
+    assert not page.timer.machine.hold_to_inspect
+
+    page.hold_action.setChecked(True)
+    assert page.timer.machine.hold_to_inspect
+    assert settings.values["timer.inspection_hold"] == "1"
+
+    page.inspection_action.setChecked(False)
+    assert not page.hold_action.isEnabled()

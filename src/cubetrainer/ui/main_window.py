@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
 
         self.tabs: QTabWidget = QTabWidget()
         timer_solves = StoredSolveList(db, db.get_or_create_session())
-        self.timer_page: TimerPage = TimerPage(solves=timer_solves)
+        self.timer_page: TimerPage = TimerPage(solves=timer_solves, settings=db)
         self.trainer_pages: dict[str, TrainerPage] = {}
         self.timer_stack: QStackedWidget = QStackedWidget()
         self.timer_stack.addWidget(self.timer_page)

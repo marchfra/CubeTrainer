@@ -457,6 +457,28 @@ class StoredTrainerPrefs:
         """
         return self.db.load_case_statuses(self.set_id)
 
+    def get_setting(self, key: str) -> str | None:
+        """Read a setting (shared by every set's trainer).
+
+        Args:
+            key: The setting's name.
+
+        Returns:
+            Its value, or None if it was never set.
+
+        """
+        return self.db.get_setting(key)
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Store a setting (shared by every set's trainer).
+
+        Args:
+            key: The setting's name.
+            value: Its new value.
+
+        """
+        self.db.set_setting(key, value)
+
     def customizations(self) -> dict[str, CaseCustomization]:
         """Return what the user changed about the set's cases.
 

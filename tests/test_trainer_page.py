@@ -260,6 +260,7 @@ def test_right_arrow_still_stops_the_full_timer(qtbot: QtBot, clock: FakeClock) 
     window.show()
     timer_page = window.timer_page
     timer_page.timer._clock = clock
+    timer_page.inspection_action.setChecked(False)
     qtbot.keyPress(timer_page, Qt.Key.Key_Space)
     clock.advance_ms(300)
     qtbot.keyRelease(timer_page, Qt.Key.Key_Space)
@@ -531,3 +532,26 @@ def test_trainer_uses_the_users_alg(qtbot: QtBot, clock: FakeClock) -> None:
             DIALOG_IMAGE_SIZE,
         ).toImage()
     )
+
+
+def test_trainer_inspection_is_off_by_default_and_separate(qtbot: QtBot) -> None:
+    """The trainer's inspection is off until turned on, independently of the timer."""
+    db = Database(":memory:")
+    window = MainWindow(db)
+    qtbot.addWidget(window)
+    window.open_trainer("pll")
+    trainer = window.trainer_pages["pll"]
+
+    assert window.timer_page.inspection_action.isChecked()
+    assert not trainer.inspection_action.isChecked()
+    assert not trainer.timer.machine.inspection
+
+    trainer.inspection_action.setChecked(True)
+    window.timer_page.inspection_action.setChecked(False)
+
+    assert db.get_setting("trainer.inspection") == "1"
+    assert db.get_setting("timer.inspection") == "0"
+    items = [trainer.header.itemAt(i) for i in range(trainer.header.count())]
+    widgets = [item.widget() for item in items if item is not None]
+    assert widgets.index(trainer.mistake_button) < widgets.index(trainer.options_button)
+    assert widgets.index(trainer.options_button) < widgets.index(trainer.back_button)

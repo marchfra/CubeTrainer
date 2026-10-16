@@ -17,7 +17,7 @@ from cubetrainer.cases.trainer import (
     filtered_case_scrambles,
 )
 from cubetrainer.cube.model import parse_alg, reveal_alg
-from cubetrainer.solves import Solve, SolveList
+from cubetrainer.solves import Penalty, Solve, SolveList
 from cubetrainer.timing import TimerState
 from cubetrainer.ui.case_images import CaseInfo, case_pixmap
 from cubetrainer.ui.case_stats_panel import CaseStatsPanel
@@ -120,11 +120,15 @@ class TrainerPage(TimerPage):
         mistake_button: Marks the current (or last) solve as a mistake, like M.
         case_stats: Per-case statistics table.
         PANEL_LAYOUT: The trainer table, with a case column.
+        SETTINGS_PREFIX: Trainer options are shared by every set.
+        INSPECTION_DEFAULT: Inspection is off in the trainer until turned on.
 
     """
 
     back_requested = Signal()
     PANEL_LAYOUT: PanelLayout = TRAINER_LAYOUT
+    SETTINGS_PREFIX: str = "trainer"
+    INSPECTION_DEFAULT: bool = False
 
     def __init__(
         self,
@@ -150,6 +154,7 @@ class TrainerPage(TimerPage):
             solves=solves,
             generate=filtered_case_scrambles(case_set, prefs, np.random.default_rng()),
             clock=clock,
+            settings=prefs,
             parent=parent,
         )
         self.case_set: CaseSet = case_set
@@ -158,7 +163,7 @@ class TrainerPage(TimerPage):
         self._recognizer: CaseRecognizer = CaseRecognizer(case_set)
 
         self._pending_mistake: bool = False
-        self.right_column.insertLayout(0, self._build_header())
+        self._fill_header()
 
         self.hints_shown: int = 0
         self._hint_alg: str = ""
@@ -181,12 +186,10 @@ class TrainerPage(TimerPage):
         self._update_mistake_button()
         self.update_filter_button()
 
-    def _build_header(self) -> QHBoxLayout:
-        """Create the header: title, filter button, Mistake and back buttons.
+    def _fill_header(self) -> None:
+        """Add the trainer's controls around the Options button in the header.
 
-        Returns:
-            The header row.
-
+        The row ends up as: title, filter button, (space), Mistake, Options, back.
         """
         self.title: QLabel = QLabel(f"{self.case_set.name} trainer")
         font = QFont()
@@ -196,14 +199,12 @@ class TrainerPage(TimerPage):
         self.back_button: QPushButton = QPushButton("← Full timer")
         self.back_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.back_button.clicked.connect(self.back_requested)
-        header = QHBoxLayout()
-        header.addWidget(self.title)
+        self.header.insertWidget(0, self.title)
         self.filter_button: QPushButton = QPushButton()
         self.filter_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.filter_button.setToolTip("Choose which cases to train")
         self.filter_button.clicked.connect(self.edit_filter)
-        header.addWidget(self.filter_button)
-        header.addStretch()
+        self.header.insertWidget(1, self.filter_button)
         self.mistake_button: QPushButton = QPushButton("Mistake")
         self.mistake_button.setCheckable(True)
         self.mistake_button.setObjectName("mistakeButton")
@@ -220,9 +221,9 @@ class TrainerPage(TimerPage):
             "Mark the solve in progress, or else the last solve, as a mistake (M)",
         )
         self.mistake_button.clicked.connect(self.toggle_mistake)
-        header.addWidget(self.mistake_button)
-        header.addWidget(self.back_button)
-        return header
+        options_index = self.header.indexOf(self.options_button)
+        self.header.insertWidget(options_index, self.mistake_button)
+        self.header.addWidget(self.back_button)
 
     def edit_filter(self) -> None:
         """Open the filter dialog; apply and save the filter if accepted.
@@ -361,12 +362,13 @@ class TrainerPage(TimerPage):
         return customization.apply_to(case) if customization else case
 
     @override
-    def make_solve(self, time_ms: int, scramble: str) -> Solve:
+    def make_solve(self, time_ms: int, scramble: str, penalty: Penalty) -> Solve:
         """Record a trainer solve together with the case its scramble set up.
 
         Args:
             time_ms: The solve time in milliseconds.
             scramble: The scramble shown when the solve started.
+            penalty: The inspection penalty (OK without inspection).
 
         Returns:
             The new solve, with ``case_id`` set when the case is recognised, the
@@ -378,6 +380,7 @@ class TrainerPage(TimerPage):
         return Solve(
             time_ms=time_ms,
             scramble=scramble,
+            penalty=penalty,
             case_id=case.id if case else None,
             hints=self.hints_shown,
             mistake=mistake,

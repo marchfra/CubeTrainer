@@ -24,6 +24,7 @@ from cubetrainer.cases.catalog import (
 )
 from cubetrainer.cases.recognition import corner_pattern, eo_pattern, oll_pattern
 from cubetrainer.cube.model import Move, parse_alg, state_solved_by
+from cubetrainer.settings import Settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,8 +102,8 @@ class CaseFilter:
         )
 
 
-class TrainerPrefs(Protocol):
-    """Where the trainer reads learning statuses and keeps its filter."""
+class TrainerPrefs(Settings, Protocol):
+    """Where the trainer reads learning statuses and keeps its filter and options."""
 
     def statuses(self) -> dict[str, CaseStatus]:
         """Return the current learning status of the set's cases.
@@ -149,12 +150,36 @@ class MemoryTrainerPrefs:
         case_statuses: Learning status by case id.
         case_filter: The current filter.
         case_customizations: The user's changes to cases, by case id.
+        settings: Other settings (the trainer's options), by name.
 
     """
 
     case_statuses: dict[str, CaseStatus] = field(default_factory=dict)
     case_filter: CaseFilter = field(default_factory=CaseFilter)
     case_customizations: dict[str, CaseCustomization] = field(default_factory=dict)
+    settings: dict[str, str] = field(default_factory=dict)
+
+    def get_setting(self, key: str) -> str | None:
+        """Read a setting.
+
+        Args:
+            key: The setting's name.
+
+        Returns:
+            Its value, or None if it was never set.
+
+        """
+        return self.settings.get(key)
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Store a setting.
+
+        Args:
+            key: The setting's name.
+            value: Its new value.
+
+        """
+        self.settings[key] = value
 
     def customizations(self) -> dict[str, CaseCustomization]:
         """Return the user's changes to cases.

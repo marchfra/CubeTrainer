@@ -5,6 +5,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from cubetrainer.db import Database, default_db_path
+from cubetrainer.sound import quiet_audio_warnings
 from cubetrainer.ui.main_window import MainWindow
 
 
@@ -13,6 +14,7 @@ def main() -> None:
 
     The process exits with the Qt event loop's return code.
     """
+    quiet_audio_warnings()
     app = QApplication(sys.argv)
     app.setApplicationName("CubeTrainer")
     db = Database(default_db_path())
