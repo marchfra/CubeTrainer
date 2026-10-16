@@ -39,8 +39,13 @@ and averages and means are rounded to the nearest hundredth.
 **Trainer** (Learn → *Train PLL*)
 
 - Opens in the Timer tab (← *Full timer* goes back). Each scramble sets up a PLL
-  case picked with equal probability, with random U turns before and after it.
-  Scrambles are random-state style, so they don't give away the algorithm.
+  case, with random U turns before and after it. Scrambles are random-state style,
+  so they don't give away the algorithm.
+- **Case filter** (the *N cases · equal ▾* button): choose groups and learning
+  statuses (a case must match both), and whether cases come up with equal
+  probability or with their real-solve frequency (*realistic*: in PLL, H/Na/Nb are
+  1/72, E/Z 1/36, the rest 1/18). The filter is saved per set; if status changes
+  leave nothing selected, the trainer falls back to all cases and says so.
 - The solves table has a case column, and the solve dialog shows the case's name
   and image. The case is recognised from the scramble itself.
 - Trainer solves are stored in their own session, separate from full solves.
@@ -119,6 +124,7 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
         catalog.py         case sets, cases, learning status
         recognition.py     identify PLL cases regardless of AUF
         trainer.py         case scrambles and recognising them
+        filters.py         case filter and case probabilities
         data/pll.json      bundled PLL cases and default algorithms
       ui/                  Qt widgets: main window, timer/trainer/learn pages, dialogs
     tests/                 pytest + pytest-qt

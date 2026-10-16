@@ -6,11 +6,12 @@ import numpy as np
 import pytest
 
 from cubetrainer.cases.catalog import Case, load_case_set
+from cubetrainer.cases.filters import MemoryTrainerPrefs
 from cubetrainer.cases.recognition import is_oll_solved
 from cubetrainer.cases.trainer import (
     CaseRecognizer,
     case_scramble,
-    uniform_case_scrambles,
+    filtered_case_scrambles,
 )
 from cubetrainer.cube.model import SOLVED, Move, parse_alg
 
@@ -60,9 +61,13 @@ def test_recognizer_rejects_other_scrambles() -> None:
     assert RECOGNIZER.recognize("") is None
 
 
-def test_uniform_generator_covers_the_set() -> None:
-    """Uniform picking reaches every case and favours none of them."""
-    generate = uniform_case_scrambles(PLL, np.random.default_rng(1))
+def test_default_generator_covers_the_set() -> None:
+    """With the default filter, every case comes up and none is favoured."""
+    generate = filtered_case_scrambles(
+        PLL,
+        MemoryTrainerPrefs(),
+        np.random.default_rng(1),
+    )
 
     counts = Counter(RECOGNIZER.recognize(generate()) for _ in range(420))
 

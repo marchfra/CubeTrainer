@@ -13,6 +13,7 @@ from collections.abc import Callable
 import numpy as np
 
 from cubetrainer.cases.catalog import Case, CaseSet
+from cubetrainer.cases.filters import TrainerPrefs, pick_case
 from cubetrainer.cases.recognition import is_oll_solved, pll_key
 from cubetrainer.cube.model import (
     SOLVED,
@@ -75,14 +76,37 @@ class CaseRecognizer:
         return self._by_key.get(pll_key(state))
 
 
-def uniform_case_scrambles(
-    case_set: CaseSet,
-    rng: np.random.Generator,
-) -> Callable[[], str]:
-    """Build a generator of scrambles for cases picked with equal probability.
+def active_cases(case_set: CaseSet, prefs: TrainerPrefs) -> tuple[list[Case], bool]:
+    """Return the cases the trainer currently picks from.
 
     Args:
-        case_set: The set to pick cases from.
+        case_set: The set being trained.
+        prefs: Where the filter and the learning statuses come from.
+
+    Returns:
+        The cases passing the filter, and False; or, if none pass (e.g. after
+        statuses changed in the Learn tab), every case of the set and True.
+
+    """
+    matching = prefs.load_filter().matching(case_set, prefs.statuses())
+    if matching:
+        return matching, False
+    return list(case_set.cases), True
+
+
+def filtered_case_scrambles(
+    case_set: CaseSet,
+    prefs: TrainerPrefs,
+    rng: np.random.Generator,
+) -> Callable[[], str]:
+    """Build a generator of scrambles for cases picked according to the filter.
+
+    The filter and statuses are read again on every call, so changes to them (in the
+    filter dialog or the Learn tab) apply from the next scramble.
+
+    Args:
+        case_set: The set being trained.
+        prefs: Where the filter and the learning statuses come from.
         rng: Random number generator.
 
     Returns:
@@ -91,7 +115,8 @@ def uniform_case_scrambles(
     """
 
     def generate() -> str:
-        case = case_set.cases[int(rng.integers(len(case_set.cases)))]
+        cases, _ = active_cases(case_set, prefs)
+        case = pick_case(cases, rng, realistic=prefs.load_filter().realistic)
         return case_scramble(case, rng)
 
     return generate

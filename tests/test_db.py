@@ -9,12 +9,14 @@ import platformdirs
 import pytest
 
 from cubetrainer.cases.catalog import CaseStatus
+from cubetrainer.cases.filters import CaseFilter
 from cubetrainer.db import (
     DATA_DIR_ENV,
     DB_FILENAME,
     MIGRATIONS,
     Database,
     StoredSolveList,
+    StoredTrainerPrefs,
     default_db_path,
     trainer_session_kind,
 )
@@ -237,3 +239,31 @@ def test_mistake_round_trip_and_update(db_path: Path) -> None:
 
     assert [s.mistake for s in loaded] == [False, True]
     reopened.close()
+
+
+def test_settings_round_trip(db: Database) -> None:
+    """Settings start unset, can be written and overwritten."""
+    assert db.get_setting("x") is None
+
+    db.set_setting("x", "1")
+    db.set_setting("x", "2")
+
+    assert db.get_setting("x") == "2"
+
+
+def test_stored_trainer_prefs(db_path: Path) -> None:
+    """The filter is saved per set; statuses come from the Learn tab's table."""
+    db = Database(db_path)
+    prefs = StoredTrainerPrefs(db, "pll")
+    assert prefs.load_filter() == CaseFilter()
+
+    case_filter = CaseFilter(groups=frozenset({"Edges Only"}), realistic=True)
+    prefs.save_filter(case_filter)
+    db.set_case_status("pll", "H", CaseStatus.LEARNING)
+    db.close()
+
+    reopened = StoredTrainerPrefs(Database(db_path), "pll")
+    assert reopened.load_filter() == case_filter
+    assert reopened.statuses() == {"H": CaseStatus.LEARNING}
+    assert StoredTrainerPrefs(reopened.db, "oll").load_filter() == CaseFilter()
+    reopened.db.close()

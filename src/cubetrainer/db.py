@@ -15,6 +15,7 @@ from typing import override
 import platformdirs
 
 from cubetrainer.cases.catalog import CaseStatus
+from cubetrainer.cases.filters import CaseFilter
 from cubetrainer.solves import Penalty, Solve, SolveList
 
 #: Environment variable overriding where the database lives (useful for development).
@@ -68,6 +69,12 @@ MIGRATIONS: tuple[str, ...] = (
     """,
     """
     ALTER TABLE solves ADD COLUMN mistake INTEGER NOT NULL DEFAULT 0;
+    """,
+    """
+    CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
     """,
 )
 
@@ -312,6 +319,93 @@ class Database:
                 " ON CONFLICT (set_id, case_id) DO UPDATE SET status = excluded.status",
                 (set_id, case_id, status.value),
             )
+
+    def get_setting(self, key: str) -> str | None:
+        """Read a stored setting.
+
+        Args:
+            key: The setting's name.
+
+        Returns:
+            Its value, or None if it was never set.
+
+        """
+        row = self._conn.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            (key,),
+        ).fetchone()
+        return None if row is None else row[0]
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Store a setting, replacing any previous value.
+
+        Args:
+            key: The setting's name.
+            value: Its new value.
+
+        """
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)"
+                " ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
+
+class StoredTrainerPrefs:
+    """Trainer preferences of one case set, kept in the database.
+
+    Statuses are the ones set in the Learn tab; the filter is a setting.
+
+    Attributes:
+        db: The database.
+        set_id: The case set.
+
+    """
+
+    def __init__(self, db: Database, set_id: str) -> None:
+        """Create the preferences of a set.
+
+        Args:
+            db: The database.
+            set_id: The case set, e.g. ``"pll"``.
+
+        """
+        self.db: Database = db
+        self.set_id: str = set_id
+
+    @property
+    def _filter_key(self) -> str:
+        """The setting holding this set's filter."""
+        return f"trainer_filter:{self.set_id}"
+
+    def statuses(self) -> dict[str, CaseStatus]:
+        """Return the learning statuses set in the Learn tab.
+
+        Returns:
+            Statuses keyed by case id; missing cases are unlearned.
+
+        """
+        return self.db.load_case_statuses(self.set_id)
+
+    def load_filter(self) -> CaseFilter:
+        """Return the saved filter, or the default one (every case, equally).
+
+        Returns:
+            The filter.
+
+        """
+        text = self.db.get_setting(self._filter_key)
+        return CaseFilter() if text is None else CaseFilter.from_json(text)
+
+    def save_filter(self, case_filter: CaseFilter) -> None:
+        """Save the filter.
+
+        Args:
+            case_filter: The filter to keep.
+
+        """
+        self.db.set_setting(self._filter_key, case_filter.to_json())
 
 
 class StoredSolveList(SolveList):

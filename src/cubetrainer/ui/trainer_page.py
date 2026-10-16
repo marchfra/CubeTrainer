@@ -6,19 +6,22 @@ from typing import override
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPixmap
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtGui import QFont, QPixmap, QShowEvent
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from cubetrainer.cases.catalog import Case, CaseSet
+from cubetrainer.cases.filters import MemoryTrainerPrefs, TrainerPrefs
 from cubetrainer.cases.trainer import (
     CaseRecognizer,
-    uniform_case_scrambles,
+    active_cases,
+    filtered_case_scrambles,
 )
 from cubetrainer.cube.model import parse_alg, reveal_alg
 from cubetrainer.solves import Solve, SolveList
 from cubetrainer.timing import TimerState
 from cubetrainer.ui.case_images import CaseInfo, case_pixmap
 from cubetrainer.ui.case_stats_panel import CaseStatsPanel
+from cubetrainer.ui.filter_dialog import FilterDialog
 from cubetrainer.ui.solves_panel import TRAINER_LAYOUT, PanelLayout
 from cubetrainer.ui.timer_page import TimerPage
 
@@ -108,7 +111,9 @@ class TrainerPage(TimerPage):
     Attributes:
         back_requested: Emitted when the user asks to return to the full timer.
         case_set: The set being trained.
+        prefs: Learning statuses and the case filter.
         title: Header naming the set.
+        filter_button: Shows the case filter; clicking it opens the filter dialog.
         back_button: Returns to the full timer.
         hint_panel: Shows the hints for the current scramble.
         hints_shown: How many hint steps have been revealed for the current scramble.
@@ -125,7 +130,7 @@ class TrainerPage(TimerPage):
         self,
         case_set: CaseSet,
         solves: SolveList | None = None,
-        generate: Callable[[], str] | None = None,
+        prefs: TrainerPrefs | None = None,
         clock: Callable[[], int] = time.perf_counter_ns,
         parent: QWidget | None = None,
     ) -> None:
@@ -134,54 +139,26 @@ class TrainerPage(TimerPage):
         Args:
             case_set: The cases to train.
             solves: The trainer session's solves; an empty, unsaved list if omitted.
-            generate: Scramble generator; defaults to cases picked with equal
-                probability.
+            prefs: Learning statuses and the case filter; in-memory defaults (every
+                case, equally likely) if omitted.
             clock: Monotonic clock in nanoseconds, passed to the timer.
             parent: Optional parent widget.
 
         """
+        prefs = prefs if prefs is not None else MemoryTrainerPrefs()
         super().__init__(
             solves=solves,
-            generate=generate
-            or uniform_case_scrambles(case_set, np.random.default_rng()),
+            generate=filtered_case_scrambles(case_set, prefs, np.random.default_rng()),
             clock=clock,
             parent=parent,
         )
         self.case_set: CaseSet = case_set
+        self.prefs: TrainerPrefs = prefs
         self._cases: dict[str, Case] = {case.id: case for case in case_set.cases}
         self._recognizer: CaseRecognizer = CaseRecognizer(case_set)
 
-        self.title: QLabel = QLabel(f"{case_set.name} trainer")
-        font = QFont()
-        font.setPointSize(18)
-        font.setBold(True)
-        self.title.setFont(font)
-        self.back_button: QPushButton = QPushButton("← Full timer")
-        self.back_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.back_button.clicked.connect(self.back_requested)
-        header = QHBoxLayout()
-        header.addWidget(self.title)
-        header.addStretch()
         self._pending_mistake: bool = False
-        self.mistake_button: QPushButton = QPushButton("Mistake")
-        self.mistake_button.setCheckable(True)
-        self.mistake_button.setObjectName("mistakeButton")
-        # Only the checked state is styled, so the unchecked button stays native; the
-        # margins match where macOS draws the native bezel inside the button, so the
-        # two states are the same size. Scoped by object name so the tooltip keeps
-        # its default look.
-        self.mistake_button.setStyleSheet(
-            f"#mistakeButton:checked {{ background-color: {MISTAKE_COLOR};"
-            " color: white; border-radius: 5px; margin: 4px 0px 5px 0px; }",
-        )
-        self.mistake_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.mistake_button.setToolTip(
-            "Mark the solve in progress, or else the last solve, as a mistake (M)",
-        )
-        self.mistake_button.clicked.connect(self.toggle_mistake)
-        header.addWidget(self.mistake_button)
-        header.addWidget(self.back_button)
-        self.right_column.insertLayout(0, header)
+        self.right_column.insertLayout(0, self._build_header())
 
         self.hints_shown: int = 0
         self._hint_alg: str = ""
@@ -202,6 +179,87 @@ class TrainerPage(TimerPage):
         self.case_stats.setFixedWidth(CASE_STATS_WIDTH)
         self.columns.insertWidget(1, self.case_stats)
         self._update_mistake_button()
+        self.update_filter_button()
+
+    def _build_header(self) -> QHBoxLayout:
+        """Create the header: title, filter button, Mistake and back buttons.
+
+        Returns:
+            The header row.
+
+        """
+        self.title: QLabel = QLabel(f"{self.case_set.name} trainer")
+        font = QFont()
+        font.setPointSize(18)
+        font.setBold(True)
+        self.title.setFont(font)
+        self.back_button: QPushButton = QPushButton("← Full timer")
+        self.back_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.back_button.clicked.connect(self.back_requested)
+        header = QHBoxLayout()
+        header.addWidget(self.title)
+        self.filter_button: QPushButton = QPushButton()
+        self.filter_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.filter_button.setToolTip("Choose which cases to train")
+        self.filter_button.clicked.connect(self.edit_filter)
+        header.addWidget(self.filter_button)
+        header.addStretch()
+        self.mistake_button: QPushButton = QPushButton("Mistake")
+        self.mistake_button.setCheckable(True)
+        self.mistake_button.setObjectName("mistakeButton")
+        # Only the checked state is styled, so the unchecked button stays native; the
+        # margins match where macOS draws the native bezel inside the button, so the
+        # two states are the same size. Scoped by object name so the tooltip keeps
+        # its default look.
+        self.mistake_button.setStyleSheet(
+            f"#mistakeButton:checked {{ background-color: {MISTAKE_COLOR};"
+            " color: white; border-radius: 5px; margin: 4px 0px 5px 0px; }",
+        )
+        self.mistake_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.mistake_button.setToolTip(
+            "Mark the solve in progress, or else the last solve, as a mistake (M)",
+        )
+        self.mistake_button.clicked.connect(self.toggle_mistake)
+        header.addWidget(self.mistake_button)
+        header.addWidget(self.back_button)
+        return header
+
+    def edit_filter(self) -> None:
+        """Open the filter dialog; apply and save the filter if accepted.
+
+        Accepting moves on to a new scramble, so it matches the new filter.
+        """
+        dialog = FilterDialog(
+            self.case_set,
+            self.prefs.statuses(),
+            self.prefs.load_filter(),
+            self,
+        )
+        if self.run_dialog(dialog) == QDialog.DialogCode.Accepted:
+            self.prefs.save_filter(dialog.case_filter())
+            self.update_filter_button()
+            self.scramble_bar.show_new()
+
+    def update_filter_button(self) -> None:
+        """Describe the current filter on its button, e.g. ``"12 cases · equal ▾"``."""
+        cases, fell_back = active_cases(self.case_set, self.prefs)
+        mode = "realistic" if self.prefs.load_filter().realistic else "equal"
+        if fell_back:
+            self.filter_button.setText(f"No case matches: all {len(cases)} · {mode}  ▾")
+        else:
+            noun = "case" if len(cases) == 1 else "cases"
+            self.filter_button.setText(f"{len(cases)} {noun} · {mode}  ▾")
+
+    @override
+    def showEvent(self, event: QShowEvent) -> None:
+        """Refresh the filter button: statuses may have changed in the Learn tab.
+
+        Args:
+            event: The show event.
+
+        """
+        super().showEvent(event)
+        self.update_filter_button()
 
     def toggle_mistake(self) -> None:
         """Flip the mistake flag of the solve in progress, or else of the last solve.

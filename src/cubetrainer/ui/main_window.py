@@ -10,7 +10,12 @@ from PySide6.QtWidgets import (
 )
 
 from cubetrainer.cases.catalog import load_case_set
-from cubetrainer.db import Database, StoredSolveList, trainer_session_kind
+from cubetrainer.db import (
+    Database,
+    StoredSolveList,
+    StoredTrainerPrefs,
+    trainer_session_kind,
+)
 from cubetrainer.ui.learn_page import LearnPage
 from cubetrainer.ui.timer_page import TimerPage
 from cubetrainer.ui.trainer_page import TrainerPage
@@ -84,6 +89,7 @@ class MainWindow(QMainWindow):
             page = TrainerPage(
                 load_case_set(set_id),
                 solves=StoredSolveList(self._db, session),
+                prefs=StoredTrainerPrefs(self._db, set_id),
             )
             page.back_requested.connect(self.open_timer)
             self.trainer_pages[set_id] = page

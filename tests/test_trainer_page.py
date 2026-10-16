@@ -1,17 +1,17 @@
 """Tests for trainer mode: the trainer page and how the app switches to it."""
 
-import numpy as np
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QLabel
 from pytestqt.qtbot import QtBot
 
-from cubetrainer.cases.catalog import load_case_set
-from cubetrainer.cases.trainer import case_scramble
+from cubetrainer.cases.catalog import CaseStatus, load_case_set
+from cubetrainer.cases.filters import CaseFilter, MemoryTrainerPrefs
 from cubetrainer.cube.model import parse_alg
 from cubetrainer.db import Database
 from cubetrainer.solves import Solve
 from cubetrainer.timing import TimerState
+from cubetrainer.ui.filter_dialog import FilterDialog
 from cubetrainer.ui.main_window import MainWindow
 from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.trainer_page import (
@@ -30,6 +30,8 @@ T_CASE = next(c for c in PLL.cases if c.id == "T")
 def page(qtbot: QtBot, clock: FakeClock) -> TrainerPage:
     """Provide a visible PLL trainer whose scrambles are always a T perm.
 
+    T is the only case marked as learning, and the filter keeps learning cases only.
+
     Args:
         qtbot: pytest-qt helper.
         clock: The fake clock.
@@ -38,8 +40,11 @@ def page(qtbot: QtBot, clock: FakeClock) -> TrainerPage:
         The page.
 
     """
-    rng = np.random.default_rng(3)
-    widget = TrainerPage(PLL, generate=lambda: case_scramble(T_CASE, rng), clock=clock)
+    prefs = MemoryTrainerPrefs(
+        case_statuses={"T": CaseStatus.LEARNING},
+        case_filter=CaseFilter(statuses=frozenset({CaseStatus.LEARNING})),
+    )
+    widget = TrainerPage(PLL, prefs=prefs, clock=clock)
     qtbot.addWidget(widget)
     widget.show()
     return widget
@@ -396,3 +401,61 @@ def test_mistake_button_turns_red_when_checked(page: TrainerPage) -> None:
     style = button.styleSheet()
     assert style.startswith(f"#{button.objectName()}:checked {{")
     assert MISTAKE_COLOR in style
+
+
+def test_filter_button_describes_the_filter(page: TrainerPage) -> None:
+    """The fixture's filter keeps only T, picked with equal probability."""
+    assert page.filter_button.text() == "1 case · equal  ▾"
+
+
+def test_accepting_the_filter_saves_it_and_rescrambles(page: TrainerPage) -> None:
+    """Accepting the dialog stores the filter and shows a matching scramble."""
+    first = page.scramble_bar.history.index
+
+    def run_dialog(dialog: QDialog) -> int:
+        assert isinstance(dialog, FilterDialog)
+        dialog.status_boxes[CaseStatus.UNLEARNED].setChecked(True)
+        dialog.realistic_button.setChecked(True)
+        return QDialog.DialogCode.Accepted
+
+    page.run_dialog = run_dialog
+    page.edit_filter()
+
+    assert page.prefs.load_filter().realistic
+    assert CaseStatus.UNLEARNED in page.prefs.load_filter().statuses
+    assert page.filter_button.text() == "21 cases · realistic  ▾"
+    assert page.scramble_bar.history.index == first + 1
+
+
+def test_cancelling_the_filter_changes_nothing(page: TrainerPage) -> None:
+    """A cancelled dialog leaves the filter and the scramble alone."""
+    before = page.prefs.load_filter()
+    scramble = page.scramble_bar.scramble
+
+    def run_dialog(dialog: QDialog) -> int:
+        assert isinstance(dialog, FilterDialog)
+        dialog.realistic_button.setChecked(True)
+        return QDialog.DialogCode.Rejected
+
+    page.run_dialog = run_dialog
+    page.edit_filter()
+
+    assert page.prefs.load_filter() == before
+    assert page.scramble_bar.scramble == scramble
+
+
+def test_filter_button_warns_when_nothing_matches(qtbot: QtBot) -> None:
+    """If statuses change so nothing matches, the button says all cases are used."""
+    prefs = MemoryTrainerPrefs(
+        case_statuses={"T": CaseStatus.LEARNING},
+        case_filter=CaseFilter(statuses=frozenset({CaseStatus.LEARNING})),
+    )
+    page = TrainerPage(PLL, prefs=prefs)
+    qtbot.addWidget(page)
+    page.show()
+
+    prefs.case_statuses["T"] = CaseStatus.FINISHED  # as if changed in Learn
+    page.hide()
+    page.show()  # showing the page again refreshes the button
+
+    assert page.filter_button.text() == "No case matches: all 21 · equal  ▾"
