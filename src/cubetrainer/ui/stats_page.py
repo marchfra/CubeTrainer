@@ -8,7 +8,7 @@ as mistakes, like the trainer's own tables.
 from dataclasses import dataclass
 from typing import override
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QShowEvent
 from PySide6.QtWidgets import (
     QDoubleSpinBox,
@@ -29,9 +29,10 @@ from cubetrainer.cases.catalog import load_case_set
 from cubetrainer.db import TIMER_KIND, Database, DbSessionStore, trainer_session_kind
 from cubetrainer.formatting import format_average, format_percent, format_value
 from cubetrainer.solves import Solve
-from cubetrainer.ui.distribution_plots import DistributionPlots
+from cubetrainer.ui.distribution_plots import HistogramPlot
 from cubetrainer.ui.learn_page import AVAILABLE_SETS
-from cubetrainer.ui.record_plots import RecordPlots
+from cubetrainer.ui.learning_plots import CaseCharts, LearningCurvePlot
+from cubetrainer.ui.record_plots import RecordsPlot
 from cubetrainer.ui.sizing import reserve_width
 
 #: Shown for an option that covers everything (sessions or cases).
@@ -82,6 +83,8 @@ def load_solves(
     source: Source,
     session_id: int | None,
     case_id: str | None,
+    *,
+    keep_mistakes: bool = False,
 ) -> list[Solve]:
     """Collect the solves a selection covers, oldest first.
 
@@ -90,9 +93,11 @@ def load_solves(
         source: The full timer or a trainer.
         session_id: One session, or None for all of the source's sessions.
         case_id: For trainers, one case, or None for every case.
+        keep_mistakes: Keep trainer solves marked as mistakes (for mistake rates).
 
     Returns:
-        The solves (for trainers, without the ones marked as mistakes).
+        The solves (for trainers, without the ones marked as mistakes unless
+        ``keep_mistakes``).
 
     """
     store = DbSessionStore(db, source.kind)
@@ -100,7 +105,8 @@ def load_solves(
     solves = [solve for sid in ids for solve in db.load_solves(sid)]
     solves.sort(key=lambda solve: solve.created_at)
     if source.set_id is not None:
-        solves = [s for s in solves if not s.mistake]
+        if not keep_mistakes:
+            solves = [s for s in solves if not s.mistake]
         if case_id is not None:
             solves = [s for s in solves if s.case_id == case_id]
     return solves
@@ -155,9 +161,11 @@ class StatsPage(QWidget):
         overview: Value labels of the overview, keyed by row name.
         averages: Value labels of the averages, keyed by ``(n, "current" | "best")``.
         sub_x_label: The sub-X rate.
-        distribution: Histogram with the fit and the cumulative distribution.
+        histogram: Histogram of the times with the ex-Gaussian fit.
         fit_labels: Values of the ex-Gaussian fit, keyed by μ, σ, τ and D.
-        record_plots: Q-Q check of the fit and personal-best progression.
+        records_plot: Personal-best progression.
+        learning_curve: Times by solve number with the fitted trend and plateau.
+        case_charts: For trainers, the slowest cases' times, mistakes and hints.
 
     """
 
@@ -175,6 +183,8 @@ class StatsPage(QWidget):
         self.source: Source = self._sources[0]
         self.session_id: int | None = DbSessionStore(db, self.source.kind).current()
         self.case_id: str | None = None
+        self._shown: tuple[object, ...] | None = None
+        self._values: list[float] = []
 
         self.source_button, self._source_menu = _picker("Full timer or a trainer")
         for source in self._sources:
@@ -194,7 +204,7 @@ class StatsPage(QWidget):
         self.sub_x.setSingleStep(1)
         self.sub_x.setSuffix(" s")
         self.sub_x.setValue(DEFAULT_SUB_X)
-        self.sub_x.valueChanged.connect(self.refresh)
+        self.sub_x.valueChanged.connect(self._update_sub_x)
 
         top = QHBoxLayout()
         for text, button in (
@@ -210,15 +220,25 @@ class StatsPage(QWidget):
         top.addStretch()
 
         # Everything below the pickers scrolls: the page is taller than the window.
-        content = QWidget()
-        layout = QVBoxLayout(content)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setWidget(content)
+        scroll.setWidget(self._build_content())
         page = QVBoxLayout(self)
         page.addLayout(top)
         page.addWidget(scroll, stretch=1)
+        # No refresh yet: the page fills in when it's first shown (see showEvent),
+        # so the app doesn't compute and draw statistics for a tab nobody opened.
+
+    def _build_content(self) -> QWidget:
+        """Create everything below the pickers: the summary boxes, then the plots.
+
+        Returns:
+            The content widget.
+
+        """
+        content = QWidget()
+        layout = QVBoxLayout(content)
         boxes = QHBoxLayout()
         boxes.addWidget(self._build_overview())
         boxes.addWidget(self._build_averages())
@@ -226,13 +246,18 @@ class StatsPage(QWidget):
         boxes.addWidget(self._build_fit())
         boxes.addStretch()
         layout.addLayout(boxes)
-        self.distribution: DistributionPlots = DistributionPlots()
-        layout.addWidget(self.distribution)
-        self.record_plots: RecordPlots = RecordPlots()
-        layout.addWidget(self.record_plots)
+        row = QHBoxLayout()
+        self.histogram: HistogramPlot = HistogramPlot()
+        row.addWidget(self.histogram)
+        self.records_plot: RecordsPlot = RecordsPlot()
+        row.addWidget(self.records_plot)
+        layout.addLayout(row)
+        self.learning_curve: LearningCurvePlot = LearningCurvePlot()
+        layout.addWidget(self.learning_curve)
+        self.case_charts: CaseCharts = CaseCharts()
+        layout.addWidget(self.case_charts)
         layout.addStretch()
-        # No refresh yet: the page fills in when it's first shown (see showEvent),
-        # so the app doesn't compute and draw statistics for a tab nobody opened.
+        return content
 
     def _build_overview(self) -> QGroupBox:
         """Create the overview box: counts, best, worst, mean, spread, percentiles.
@@ -336,9 +361,26 @@ class StatsPage(QWidget):
         )
         return box
 
+    def _show_case_charts(self) -> None:
+        """Show which cases to drill, for a trainer source covering every case."""
+        set_id = self.source.set_id
+        shown = set_id is not None and self.case_id is None
+        self.case_charts.setVisible(shown)
+        if not shown or set_id is None:
+            return
+        names = {case.id: case.name for case in load_case_set(set_id).cases}
+        solves = load_solves(
+            self._db,
+            self.source,
+            self.session_id,
+            None,
+            keep_mistakes=True,
+        )
+        self.case_charts.set_solves(solves, lambda cid: names.get(cid, cid))
+
     def _show_fit(self) -> None:
         """Show the ex-Gaussian parameters of the plotted times."""
-        fit = self.distribution.fit
+        fit = self.histogram.fit
         texts = (
             {"μ": "-", "σ": "-", "τ": "-", "D": "-"}
             if fit is None
@@ -407,10 +449,41 @@ class StatsPage(QWidget):
             )
 
     def refresh(self) -> None:
-        """Reload the selected solves and show their statistics."""
+        """Reload the selected solves and show their statistics.
+
+        Nothing is recomputed or redrawn when the selection and its solves are the
+        same as last time, so reopening the tab after no changes is instant.
+        """
         self._update_pickers()
-        solves = load_solves(self._db, self.source, self.session_id, self.case_id)
+        everything = load_solves(
+            self._db,
+            self.source,
+            self.session_id,
+            self.case_id,
+            keep_mistakes=True,
+        )
+        key = (
+            self.source,
+            self.session_id,
+            self.case_id,
+            tuple((s.id, s.value, s.mistake) for s in everything),
+        )
+        if key != self._shown:
+            self._shown = key
+            trainer = self.source.set_id is not None
+            solves = [s for s in everything if not (trainer and s.mistake)]
+            self._show(solves)
+        self._update_sub_x()
+
+    def _show(self, solves: list[Solve]) -> None:
+        """Compute and draw every statistic of some solves.
+
+        Args:
+            solves: The selected solves (for trainers, without mistakes).
+
+        """
         values = [solve.value for solve in solves]
+        self._values = values
         summary = stats.summarize(values)
         texts = {
             "solves": str(summary.count),
@@ -429,9 +502,15 @@ class StatsPage(QWidget):
         for n, (current, best) in summary.averages.items():
             self.averages[n, "current"].setText(format_average(current))
             self.averages[n, "best"].setText(format_average(best))
-        self.distribution.set_values(values)
-        self.record_plots.set_solves(solves)
+        self.histogram.set_values(values)
+        self.records_plot.set_solves(solves)
+        self.learning_curve.set_values(values)
+        self._show_case_charts()
         self._show_fit()
+
+    def _update_sub_x(self) -> None:
+        """Show the share of solves under the sub-X limit."""
+        values = self._values
         rate = stats.sub_x_rate(values, self.sub_x.value() * 1000)
         if rate is None:
             self.sub_x_label.setText("-")
@@ -459,9 +538,12 @@ class StatsPage(QWidget):
     def showEvent(self, event: QShowEvent) -> None:
         """Refresh each time the tab is shown: solves may have changed elsewhere.
 
+        The refresh runs just after the tab appears, so switching to it never waits
+        for the plots to be drawn.
+
         Args:
             event: The show event.
 
         """
         super().showEvent(event)
-        self.refresh()
+        QTimer.singleShot(0, self, self.refresh)

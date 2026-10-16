@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from PySide6.QtCore import Qt
 from pytestqt.qtbot import QtBot
 
@@ -52,6 +53,7 @@ def make_page(qtbot: QtBot, db: Database) -> StatsPage:
     page = StatsPage(db)
     qtbot.addWidget(page)
     page.show()
+    qtbot.waitUntil(lambda: page.overview["solves"].text() != "")  # deferred refresh
     return page
 
 
@@ -159,7 +161,7 @@ def test_refreshes_when_shown(qtbot: QtBot) -> None:
     page.hide()
     page.show()
 
-    assert page.overview["solves"].text() == "2"
+    qtbot.waitUntil(lambda: page.overview["solves"].text() == "2")
     assert page.overview["median"].text() == "15.00"
 
 
@@ -180,22 +182,84 @@ def test_distribution_plots_follow_the_selection(qtbot: QtBot) -> None:
     add(db, session, *range(2_000, 4_400, 200), case_id="T")
     add(db, session, 30_000, case_id="T", mistake=True)
     page = make_page(qtbot, db)
-    assert page.distribution.seconds == []
+    assert page.histogram.seconds == []
 
     page.select_source(next(s for s in all_sources() if s.set_id == "pll"))
 
-    assert len(page.distribution.seconds) == 12
-    assert max(page.distribution.seconds) < 30
-    assert page.distribution.fit is not None
-    assert page.fit_labels["μ"].text() == f"{page.distribution.fit.mu:.2f}"
+    assert len(page.histogram.seconds) == 12
+    assert max(page.histogram.seconds) < 30
+    assert page.histogram.fit is not None
+    assert page.fit_labels["μ"].text() == f"{page.histogram.fit.mu:.2f}"
     assert page.fit_labels["D"].text() != "-"
 
 
 def test_record_plots_follow_the_selection(qtbot: QtBot) -> None:
-    """The Q-Q and records plots get the same solves as the summary."""
+    """The records plot gets the same solves as the summary."""
     db = Database(":memory:")
     add(db, DbSessionStore(db, TIMER_KIND).current(), *range(10_000, 22_000, 1_000))
     page = make_page(qtbot, db)
 
-    assert page.record_plots.observed.size == 12
-    assert page.record_plots.records["single"][0][1] == 10_000
+    assert page.records_plot.records["single"][0][1] == 10_000
+
+
+def test_case_charts_only_for_trainers_on_all_cases(qtbot: QtBot) -> None:
+    """The case charts show for a trainer covering every case, with mistakes."""
+    db = Database(":memory:")
+    session = DbSessionStore(db, trainer_session_kind("pll")).current()
+    add(db, session, 2_000, 3_000, case_id="T")
+    add(db, session, 9_000, case_id="T", mistake=True)
+    page = make_page(qtbot, db)
+    assert not page.case_charts.isVisible()
+
+    page.select_source(next(s for s in all_sources() if s.set_id == "pll"))
+    assert page.case_charts.isVisible()
+    assert page.case_charts.rows[0].stats.mistake_rate == 1 / 3
+
+    page.select_case("T")
+    assert not page.case_charts.isVisible()
+
+
+def test_learning_curve_gets_the_selected_times(qtbot: QtBot) -> None:
+    """The learning curve shows the same solves as the summary."""
+    db = Database(":memory:")
+    add(db, DbSessionStore(db, TIMER_KIND).current(), *range(30_000, 10_000, -500))
+    page = make_page(qtbot, db)
+
+    assert len(page.learning_curve.seconds) == 40
+    assert page.learning_curve.curve is not None
+
+
+def test_unchanged_data_is_not_redrawn(
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reopening the tab with the same solves skips recomputing and redrawing."""
+    db = Database(":memory:")
+    add(db, DbSessionStore(db, TIMER_KIND).current(), *range(10_000, 22_000, 1_000))
+    page = make_page(qtbot, db)
+    calls: list[int] = []
+    monkeypatch.setattr(page.histogram, "set_values", lambda v: calls.append(len(v)))
+
+    page.refresh()
+    assert calls == []
+
+    add(db, DbSessionStore(db, TIMER_KIND).current(), 9_000)
+    page.refresh()
+    assert calls == [13]
+
+
+def test_sub_x_changes_do_not_redraw_plots(
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Changing the sub-X limit only updates the sub-X box."""
+    db = Database(":memory:")
+    add(db, DbSessionStore(db, TIMER_KIND).current(), 9_000, 15_000)
+    page = make_page(qtbot, db)
+    calls: list[int] = []
+    monkeypatch.setattr(page.histogram, "set_values", lambda v: calls.append(len(v)))
+
+    page.sub_x.setValue(10)
+
+    assert calls == []
+    assert page.sub_x_label.text() == "50%  (1 of 2)"

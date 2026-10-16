@@ -219,6 +219,11 @@ class TrainerPage(TimerPage):
             f"#mistakeButton:checked {{ background-color: {MISTAKE_COLOR};"
             " color: white; border-radius: 5px; margin: 4px 0px 5px 0px; }",
         )
+        # The checked rule has no padding, so its size hint is smaller than the native
+        # button's; if the page is laid out while checked (the last solve was a
+        # mistake) the layout would squeeze the button, and once unchecked the native
+        # bezel no longer fits. Keep at least the native size (it starts unchecked).
+        self.mistake_button.setMinimumSize(self.mistake_button.sizeHint())
         self.mistake_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.mistake_button.setToolTip(
             "Mark the solve in progress, or else the last solve, as a mistake (M)",

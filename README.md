@@ -106,15 +106,18 @@ and averages and means are rounded to the nearest hundredth.
   exponential tail. μ is your typical clean solve, σ how consistent clean solves
   are, τ how big your tail of bad solves is; D (Kolmogorov-Smirnov) says how well
   the model fits (smaller is better).
-- **Distribution:** a histogram of your times with the fitted curve, and the share
-  of solves under each time (observed and fitted). Hover for bar counts and
-  shares.
-- **Fit check (Q-Q plot):** each of your times against the time the model expects
-  at the same rank. On the diagonal: the model describes you well; above it at
-  the right: your slow solves are worse than the model expects.
-- **Personal bests over time:** every new best single and best ao5, carried on to
-  your latest solve. Hover for the record and when it was set.
-- The tab only computes and draws when you open it.
+- **Distribution** and **personal bests over time**, side by side: a histogram
+  of your times with the fitted curve (hover for bar counts), and every new best
+  single and best ao5, carried on to your latest solve (hover for the record and
+  when it was set).
+- **Learning curve:** your times by solve number with a fitted trend that levels
+  off (an exponential learning curve), projected half as far again, with the
+  plateau it approaches and how many solves it takes to halve the remaining gap.
+  A trend is only reported when it's clearly bigger than random scatter.
+- **Which cases to drill** (trainers, all cases): the slowest cases' mean time,
+  mistake rate and hint use, side by side.
+- The tab only computes and draws when you open it, and reopening it without new
+  solves is instant. The scroll wheel scrolls the page even over the plots.
 
 ## Requirements
 

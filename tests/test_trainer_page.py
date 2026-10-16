@@ -407,6 +407,35 @@ def test_mistake_button_turns_red_when_checked(page: TrainerPage) -> None:
     assert MISTAKE_COLOR in style
 
 
+def test_mistake_button_keeps_its_size_when_opened_checked(
+    qtbot: QtBot,
+    clock: FakeClock,
+) -> None:
+    """Opening on a mistake (button checked) doesn't squeeze the native button."""
+    db = Database(":memory:")
+    first = MainWindow(db)
+    qtbot.addWidget(first)
+    first.show()
+    first.open_trainer("pll")
+    trainer = first.trainer_pages["pll"]
+    trainer.timer._clock = clock
+    do_solve(qtbot, trainer, clock, 1_500)
+    trainer.toggle_mistake()
+
+    window = MainWindow(db)
+    qtbot.addWidget(window)
+    window.show()
+    window.open_trainer("pll")
+    button = window.trainer_pages["pll"].mistake_button
+    fresh = TrainerPage(load_case_set("pll"))  # opened unchecked
+    qtbot.addWidget(fresh)
+    native = fresh.mistake_button.sizeHint()
+
+    assert button.isChecked()
+    assert button.minimumSize() == native
+    assert button.width() >= native.width()
+
+
 def test_filter_button_describes_the_filter(page: TrainerPage) -> None:
     """The fixture's filter keeps only T, picked with equal probability."""
     assert page.filter_button.text() == "1 case · equal  ▾"
