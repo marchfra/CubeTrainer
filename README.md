@@ -90,15 +90,21 @@ and averages and means are rounded to the nearest hundredth.
   each further → reveals one more move. The moves start from the case as the image
   shows it, so turn the U layer to match the image first. Brackets that group an
   algorithm into blocks, like `(R U R' U')`, are shown but don't count as steps. →
-  works before and during a solve and never stops the timer. The number of hint steps used is saved with the
-  solve.
+  works before and during a solve and never stops the timer. Faint dots after
+  the moves show how many are still hidden. The number of hint steps used is
+  saved with the solve.
 - **Mistakes:** press M (or click *Mistake*, red while flagged) if you messed up. During a solve it
   flags that solve without stopping the timer; otherwise it toggles the flag of the
   last solve. The solve dialog has a *Mistake* checkbox too.
 - The solves table shows flags: ✗ for a mistake, 💡n for n hint steps used.
-- **Per-case table:** n, best, avg, ao5, err% (mistake rate) and hint% for every
-  case trained, sortable by any column. Best/avg/ao5 leave out mistakes; hinted
-  solves count. The summary's best and mean leave out mistakes too.
+- **Layout:** the top row holds the trainer's name and filter on the left, the
+  scramble in the middle and *Mistake*, *Options* and *← Full timer* on the
+  right. Below it, the hint and the timer sit in the middle of the window,
+  between the session's solves on the left and the per-case table on the right.
+- **Per-case table:** n, avg, ao5 and err% (mistake rate) for every case trained,
+  sortable by any column; hover a row for the case's best time and how often you
+  used hints. Avg/ao5 leave out mistakes; hinted solves count. The summary's best
+  and mean leave out mistakes too.
 - The Learn tab shows each case's best and average trainer time.
 - The same shortcuts work (⌘1/⌘2/⌘3, ⌘Z). Inspection is off by default; the
   trainer has its own *Options ▾* toggle, separate from the full timer's.

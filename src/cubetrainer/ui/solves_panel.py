@@ -318,6 +318,8 @@ class SolvesPanel(QWidget):
         layout: PanelLayout = TIMER_LAYOUT,
         case_name: Callable[[str], str] = str,
         parent: QWidget | None = None,
+        *,
+        embed: bool = True,
     ) -> None:
         """Create the panel.
 
@@ -326,6 +328,9 @@ class SolvesPanel(QWidget):
             layout: Which statistics and columns to show.
             case_name: Display name of a case id, for the case column.
             parent: Optional parent widget.
+            embed: Lay the summary and table out in the panel. False leaves them
+                for the caller to place (e.g. in a grid that lines the table up
+                with another one); the panel then still updates them.
 
         """
         super().__init__(parent)
@@ -344,10 +349,11 @@ class SolvesPanel(QWidget):
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.table.clicked.connect(self._on_clicked)
 
-        box = QVBoxLayout(self)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.addWidget(self.summary)
-        box.addWidget(self.table, stretch=1)
+        if embed:
+            box = QVBoxLayout(self)
+            box.setContentsMargins(0, 0, 0, 0)
+            box.addWidget(self.summary)
+            box.addWidget(self.table, stretch=1)
         self.refresh()
 
     def refresh(self) -> None:

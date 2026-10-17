@@ -25,15 +25,13 @@ from cubetrainer.formatting import format_average, format_percent, format_value
 from cubetrainer.solves import SolveList
 from cubetrainer.stats import CASE_AVERAGE_SIZE, CaseStats
 
-#: Column headers.
+#: Column headers. Each row's tooltip adds the best time and the hint rate.
 COLUMNS: tuple[str, ...] = (
     "case",
     "n",
-    "best",
     "avg",
     f"ao{CASE_AVERAGE_SIZE}",
     "err%",
-    "hint%",
 )
 
 #: Role holding the value a column sorts by (numbers, not their text).
@@ -58,7 +56,11 @@ def _time_cell(value: float | None, text: Callable[[float | None], str]) -> _Cel
 
 
 class CaseStatsModel(QAbstractTableModel):
-    """One row per case that has solves, in the set's order."""
+    """One row per case that has solves, in the set's order.
+
+    The table fits beside the timer as narrow as the solves table, so the best time
+    and the hint rate are in each row's tooltip (and on the Stats tab).
+    """
 
     def __init__(self, case_set: CaseSet, solves: SolveList) -> None:
         """Create the model.
@@ -72,17 +74,20 @@ class CaseStatsModel(QAbstractTableModel):
         self._case_set: CaseSet = case_set
         self._solves: SolveList = solves
         self._rows: list[tuple[_Cell, ...]] = []
+        self._tooltips: list[str] = []
         self.refresh()
 
     def refresh(self) -> None:
         """Recompute every case's statistics and redraw the table."""
         self.beginResetModel()
         by_case = stats.case_stats(self._solves.solves)
-        self._rows = [
-            self._row(position, case.name, by_case[case.id])
+        shown = [
+            (position, case.name, by_case[case.id])
             for position, case in enumerate(self._case_set.cases)
             if case.id in by_case
         ]
+        self._rows = [self._row(*row) for row in shown]
+        self._tooltips = [self._tooltip(name, case) for _, name, case in shown]
         self.endResetModel()
 
     def set_solves(self, solves: SolveList) -> None:
@@ -111,12 +116,26 @@ class CaseStatsModel(QAbstractTableModel):
         return (
             (name, float(position)),
             (str(case.count), float(case.count)),
-            _time_cell(case.best, format_value),
             _time_cell(case.mean, format_average),
             _time_cell(case.current_average, format_average),
             (format_percent(case.mistake_rate), case.mistake_rate),
-            (format_percent(case.hint_rate), case.hint_rate),
         )
+
+    @staticmethod
+    def _tooltip(name: str, case: CaseStats) -> str:
+        """Describe what the row's columns leave out.
+
+        Args:
+            name: The case name.
+            case: The case's statistics.
+
+        Returns:
+            e.g. ``"T: best 1.52 · hints used in 20% of solves"``.
+
+        """
+        best = "-" if case.best is None else format_value(case.best)
+        hints = format_percent(case.hint_rate)
+        return f"{name}: best {best} · hints used in {hints} of solves"
 
     @override
     def rowCount(self, parent: _AnyIndex | None = None) -> int:
@@ -172,6 +191,8 @@ class CaseStatsModel(QAbstractTableModel):
             return text
         if role == SORT_ROLE:
             return key
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return self._tooltips[index.row()]
         if role == Qt.ItemDataRole.TextAlignmentRole:
             horizontal = (
                 Qt.AlignmentFlag.AlignLeft
@@ -213,6 +234,7 @@ class CaseStatsPanel(QWidget):
     Attributes:
         model: The per-case statistics.
         proxy: Sorts the model by the numeric sort keys.
+        title: Names the table and says what leaves out mistakes.
         table: The table view.
 
     """
@@ -222,6 +244,8 @@ class CaseStatsPanel(QWidget):
         case_set: CaseSet,
         solves: SolveList,
         parent: QWidget | None = None,
+        *,
+        embed: bool = True,
     ) -> None:
         """Create the panel.
 
@@ -229,6 +253,8 @@ class CaseStatsPanel(QWidget):
             case_set: The set being trained.
             solves: The trainer session's solves.
             parent: Optional parent widget.
+            embed: Lay the title and table out in the panel. False leaves them for
+                the caller to place (e.g. lined up with the solves table).
 
         """
         super().__init__(parent)
@@ -249,11 +275,12 @@ class CaseStatsPanel(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-        note = QLabel("Per case (best / avg / ao5 leave out mistakes)")
-        box = QVBoxLayout(self)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.addWidget(note)
-        box.addWidget(self.table, stretch=1)
+        self.title: QLabel = QLabel("Per case (avg / ao5 leave out mistakes)")
+        if embed:
+            box = QVBoxLayout(self)
+            box.setContentsMargins(0, 0, 0, 0)
+            box.addWidget(self.title)
+            box.addWidget(self.table, stretch=1)
 
     def refresh(self) -> None:
         """Recompute the statistics after the solves changed."""

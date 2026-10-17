@@ -66,21 +66,36 @@ def test_one_row_per_case_in_set_order(qtbot: QtBot) -> None:
     """Only cases with solves appear, in the set's order, mistakes left out."""
     panel = make_panel(qtbot, sample_solves())
 
-    assert [panel.proxy.headerData(c, Qt.Orientation.Horizontal) for c in range(7)] == [
+    assert [panel.proxy.headerData(c, Qt.Orientation.Horizontal) for c in range(5)] == [
         *COLUMNS,
     ]
     assert rows(panel) == [
-        ["Aa", "1", "DNF", "-", "-", "0%", "0%"],
-        ["T", "3", "2.00", "2.50", "-", "33%", "33%"],
-        ["Ua", "1", "1.50", "1.50", "-", "0%", "0%"],
+        ["Aa", "1", "-", "-", "0%"],
+        ["T", "3", "2.50", "-", "33%"],
+        ["Ua", "1", "1.50", "-", "0%"],
+    ]
+
+
+def test_tooltip_has_best_and_hints(qtbot: QtBot) -> None:
+    """The columns left out of the narrow table are in each row's tooltip."""
+    panel = make_panel(qtbot, sample_solves())
+    proxy = panel.proxy
+    tips = [
+        proxy.data(proxy.index(r, 2), Qt.ItemDataRole.ToolTipRole) for r in range(3)
+    ]
+
+    assert tips == [
+        "Aa: best DNF · hints used in 0% of solves",
+        "T: best 2.00 · hints used in 33% of solves",
+        "Ua: best 1.50 · hints used in 0% of solves",
     ]
 
 
 def test_sorting_uses_numbers_not_text(qtbot: QtBot) -> None:
-    """Sorting by best puts 1.50 before 2.00, and DNF last."""
+    """Sorting by avg puts 1.50 before 2.50, and no time last."""
     panel = make_panel(qtbot, sample_solves())
 
-    panel.table.sortByColumn(COLUMNS.index("best"), Qt.SortOrder.AscendingOrder)
+    panel.table.sortByColumn(COLUMNS.index("avg"), Qt.SortOrder.AscendingOrder)
 
     assert [row[0] for row in rows(panel)] == ["Ua", "T", "Aa"]
 
@@ -94,4 +109,4 @@ def test_refresh_picks_up_new_solves(qtbot: QtBot) -> None:
     solves.add(Solve(2_000, "", case_id="H"))
     panel.refresh()
 
-    assert rows(panel)[0][:3] == ["H", "1", "2.00"]
+    assert rows(panel)[0][:3] == ["H", "1", "2.00"]  # case, n, avg

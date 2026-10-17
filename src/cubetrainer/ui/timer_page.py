@@ -8,11 +8,13 @@ from collections.abc import Callable
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDialog,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
+    QLabel,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -43,7 +45,9 @@ PENALTY_SHORTCUTS: dict[Penalty, str] = {
 #: Shortcut deleting the last solve. "Ctrl" is Cmd on macOS.
 DELETE_LAST_SHORTCUT: str = "Ctrl+Z"
 
-_SOLVES_PANEL_WIDTH: int = 320
+#: Width of the side columns: the solves on the left and, on pages that have
+#: one, the right column. Equal widths keep the timer centred between them.
+SIDE_COLUMN_WIDTH: int = 320
 
 
 def default_scramble_generator() -> Callable[[], str]:
@@ -101,9 +105,15 @@ class TimerPage(QWidget):
         solves_panel: Summary and table of solves.
         scramble_bar: Shows the scramble to apply before the solve.
         timer: The spacebar-driven timer.
-        right_column: Layout holding the header, the scramble bar and the timer.
-        header: Top row of the right column; ends with the Options button.
-        columns: The page's main layout: solves panel, then the right column.
+        title: The page's name, at the start of the header.
+        grid: The page's layout. Row 0 is the header: ``header_left``, the scramble
+            bar, ``header_right``. Under it, column 0 holds the session button, the
+            statistics and the solves table (rows 1-3); column 1 the timer column;
+            column 2 an optional right column (see ``add_right_column``), whose
+            room the timer column takes when there is none.
+        header_left: Start of the header, over the solves: the title.
+        header_right: End of the header: ends with the Options button.
+        center_column: Layout holding the timer (and the time graph).
         settings: Where the options are kept.
         options_button: Opens ``options_menu``.
         options_menu: The inspection options.
@@ -165,8 +175,8 @@ class TimerPage(QWidget):
             self.PANEL_LAYOUT,
             # A bound method is looked up per call, so subclasses' attributes exist.
             self.case_name,
+            embed=False,  # placed in the body grid, to line up with a right column
         )
-        self.solves_panel.setFixedWidth(_SOLVES_PANEL_WIDTH)
         self.solves_panel.solve_activated.connect(self.show_solve)
         self.scramble_bar: ScrambleBar = ScrambleBar(
             generate or default_scramble_generator(),
@@ -175,33 +185,41 @@ class TimerPage(QWidget):
         self.timer.solve_started.connect(self._on_solve_started)
         self.timer.solve_finished.connect(self._on_solve_finished)
 
-        self.header: QHBoxLayout = QHBoxLayout()
-        self.header.addStretch()
-        self.header.addWidget(self._build_options())
-        self.right_column: QVBoxLayout = QVBoxLayout()
-        self.right_column.addLayout(self.header)
-        self.right_column.addWidget(self.scramble_bar)
-        self.right_column.addWidget(self.timer, stretch=1)
+        self.title: QLabel = QLabel("Full timer")
+        font = QFont()
+        font.setPointSize(18)
+        font.setBold(True)
+        self.title.setFont(font)
+        self.header_left: QHBoxLayout = QHBoxLayout()
+        self.header_left.addWidget(self.title)
+        self.header_left.addStretch()
+        self.header_right: QHBoxLayout = QHBoxLayout()
+        self.header_right.addStretch()
+        self.header_right.addWidget(self._build_options())
+        self.center_column: QVBoxLayout = QVBoxLayout()
+        self.center_column.addWidget(self.timer, stretch=1)
         self.time_graph: TimeGraph | None = None
         if self.SHOW_GRAPH:
             self.time_graph = TimeGraph(self.solves)
-            self.right_column.addWidget(self.time_graph)
-        self.columns: QHBoxLayout = QHBoxLayout(self)
-        self.columns.addWidget(self._build_left_column())
-        self.columns.addLayout(self.right_column, stretch=1)
+            self.center_column.addWidget(self.time_graph)
+        self.grid: QGridLayout = QGridLayout(self)
+        # The top row is the header: the scramble in the middle, over the timer.
+        self.grid.addLayout(self.header_left, 0, 0)
+        self.grid.addWidget(self.scramble_bar, 0, 1)
+        self.grid.addLayout(self.header_right, 0, 2)
+        self._build_left_column()
+        # Without a right column the timer column also takes the right one's room.
+        self.grid.addLayout(self.center_column, 1, 1, 3, 2)
+        self.grid.setColumnStretch(1, 1)
+        self.grid.setRowStretch(3, 1)
 
         self.shortcuts: dict[str, QShortcut] = {}
         for penalty, keys in PENALTY_SHORTCUTS.items():
             self._add_shortcut(keys, lambda p=penalty: self.set_last_penalty(p))
         self._add_shortcut(DELETE_LAST_SHORTCUT, self.delete_last)
 
-    def _build_left_column(self) -> QWidget:
-        """Create the left column: the session button above the solves panel.
-
-        Returns:
-            The column.
-
-        """
+    def _build_left_column(self) -> None:
+        """Fill the body's left column: session button, statistics, solves table."""
         self.session_menu: QMenu = QMenu(self)
         self.session_menu.aboutToShow.connect(self._fill_session_menu)
         self.session_button: QPushButton = QPushButton()
@@ -216,13 +234,28 @@ class TimerPage(QWidget):
         )
         self._update_session_button()
 
-        column = QWidget()
-        column.setFixedWidth(_SOLVES_PANEL_WIDTH)
-        box = QVBoxLayout(column)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.addWidget(self.session_button)
-        box.addWidget(self.solves_panel, stretch=1)
-        return column
+        for row, widget in enumerate(
+            (self.session_button, self.solves_panel.summary, self.solves_panel.table),
+        ):
+            widget.setFixedWidth(SIDE_COLUMN_WIDTH)
+            self.grid.addWidget(widget, row + 1, 0)
+
+    def add_right_column(self, title: QWidget, table: QWidget) -> None:
+        """Add a column to the right of the timer, as wide as the solves column.
+
+        The title sits level with the session button and the table fills the rest
+        of the column; the timer column is then centred in the page.
+
+        Args:
+            title: Goes at the top, under the header.
+            table: Goes under the title.
+
+        """
+        self.grid.removeItem(self.center_column)
+        self.grid.addLayout(self.center_column, 1, 1, 3, 1)
+        table.setFixedWidth(SIDE_COLUMN_WIDTH)
+        self.grid.addWidget(title, 1, 2)
+        self.grid.addWidget(table, 2, 2, 2, 1)
 
     def _fill_session_menu(self) -> None:
         """Rebuild the session menu: every session (the current one ticked), actions."""

@@ -6,7 +6,7 @@ from typing import override
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPixmap, QShowEvent
+from PySide6.QtGui import QFont, QPalette, QPixmap, QShowEvent
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from cubetrainer.cases.catalog import Case, CaseSet
@@ -41,9 +41,6 @@ MISTAKE_SHORTCUT: str = "M"
 #: Background of the Mistake button while the solve it acts on is flagged.
 MISTAKE_COLOR: str = "#e5484d"
 
-#: Width of the per-case statistics table.
-CASE_STATS_WIDTH: int = 380
-
 #: Shown in the hint panel before any hint is revealed.
 HINT_PROMPT: str = "Press → for a hint"
 
@@ -52,8 +49,9 @@ class HintPanel(QWidget):
     """Shows the case image and the first few moves of its algorithm.
 
     Attributes:
-        image: The case image (empty until the first hint).
+        image: The case image (hidden until the first hint).
         moves: The revealed moves, or a prompt before the first hint.
+        remaining: One faint dot per move still hidden.
 
     """
 
@@ -72,20 +70,30 @@ class HintPanel(QWidget):
         font.setPointSize(22)
         self.moves.setFont(font)
         self.moves.setWordWrap(True)
+        self.remaining: QLabel = QLabel()
+        small = QFont()
+        small.setPointSize(12)
+        self.remaining.setFont(small)
+        # Faint, and following light/dark mode: the hidden moves shouldn't compete
+        # with the revealed ones.
+        self.remaining.setForegroundRole(QPalette.ColorRole.PlaceholderText)
+        # The panel keeps the image's height, so the timer below doesn't move when
+        # the first hint appears.
+        self.setMinimumHeight(HINT_IMAGE_SIZE)
         box = QHBoxLayout(self)
+        box.setContentsMargins(0, 0, 0, 0)
         box.addStretch()
         box.addWidget(self.image)
         box.addWidget(self.moves)
+        box.addWidget(self.remaining)
         box.addStretch()
         self.clear()
 
     def clear(self) -> None:
-        """Hide the hint, showing only the prompt.
-
-        The (empty) image keeps its space, so the timer below doesn't move when the
-        first hint appears.
-        """
+        """Hide the hint, showing only the prompt (centred, as nothing is beside it)."""
         self.image.clear()
+        self.image.hide()
+        self.remaining.hide()
         self.moves.setText(HINT_PROMPT)
 
     def show_hint(self, image: QPixmap, alg: str, revealed: int) -> None:
@@ -101,9 +109,11 @@ class HintPanel(QWidget):
 
         """
         self.image.setPixmap(image)
+        self.image.show()
         hidden = len(parse_alg(alg)) - revealed
-        more = f"   (+{hidden} more)" if hidden > 0 else ""
-        self.moves.setText(reveal_alg(alg, revealed) + more)
+        self.moves.setText(reveal_alg(alg, revealed))
+        self.remaining.setText("  ".join("•" * hidden))
+        self.remaining.setVisible(hidden > 0)
 
 
 def filter_text(count: int, odds: Odds, *, fell_back: bool) -> str:
@@ -198,8 +208,8 @@ class TrainerPage(TimerPage):
         self._hint_length: int = 0
         self._hint_image: QPixmap = QPixmap()
         self.hint_panel: HintPanel = HintPanel()
-        # Between the scramble bar and the timer.
-        self.right_column.insertWidget(2, self.hint_panel)
+        # Between the scramble bar (in the header) and the timer.
+        self.center_column.insertWidget(0, self.hint_panel)
         self.scramble_bar.scramble_changed.connect(self._reset_hints)
         # A shortcut fires before the timer sees the key press, so → never stops a
         # running solve: a hint can be asked for mid-solve.
@@ -208,9 +218,12 @@ class TrainerPage(TimerPage):
         self._add_shortcut(MISTAKE_SHORTCUT, self.toggle_mistake)
         self.timer.solve_started.connect(self._update_mistake_button)
 
-        self.case_stats: CaseStatsPanel = CaseStatsPanel(case_set, self.solves)
-        self.case_stats.setFixedWidth(CASE_STATS_WIDTH)
-        self.columns.insertWidget(1, self.case_stats)
+        self.case_stats: CaseStatsPanel = CaseStatsPanel(
+            case_set,
+            self.solves,
+            embed=False,
+        )
+        self.add_right_column(self.case_stats.title, self.case_stats.table)
         self._update_mistake_button()
         self.update_filter_button()
 
@@ -219,20 +232,15 @@ class TrainerPage(TimerPage):
 
         The row ends up as: title, filter button, (space), Mistake, Options, back.
         """
-        self.title: QLabel = QLabel(f"{self.case_set.name} trainer")
-        font = QFont()
-        font.setPointSize(18)
-        font.setBold(True)
-        self.title.setFont(font)
+        self.title.setText(f"{self.case_set.name} trainer")
         self.back_button: QPushButton = QPushButton("← Full timer")
         self.back_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.back_button.clicked.connect(self.back_requested)
-        self.header.insertWidget(0, self.title)
         self.filter_button: QPushButton = QPushButton()
         self.filter_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.filter_button.setToolTip("Choose which cases to train")
         self.filter_button.clicked.connect(self.edit_filter)
-        self.header.insertWidget(1, self.filter_button)
+        self.header_left.insertWidget(1, self.filter_button)
         self.mistake_button: QPushButton = QPushButton("Mistake")
         self.mistake_button.setCheckable(True)
         self.mistake_button.setObjectName("mistakeButton")
@@ -254,9 +262,9 @@ class TrainerPage(TimerPage):
             "Mark the solve in progress, or else the last solve, as a mistake (M)",
         )
         self.mistake_button.clicked.connect(self.toggle_mistake)
-        options_index = self.header.indexOf(self.options_button)
-        self.header.insertWidget(options_index, self.mistake_button)
-        self.header.addWidget(self.back_button)
+        options_index = self.header_right.indexOf(self.options_button)
+        self.header_right.insertWidget(options_index, self.mistake_button)
+        self.header_right.addWidget(self.back_button)
 
     def edit_filter(self) -> None:
         """Open the filter dialog; apply and save the filter if accepted.

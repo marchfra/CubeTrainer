@@ -2,7 +2,7 @@
 
 import pytest
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QLabel
+from PySide6.QtWidgets import QDialog, QLabel, QWidget
 from pytestqt.qtbot import QtBot
 
 from cubetrainer.cases.catalog import CaseCustomization, CaseStatus, load_case_set
@@ -190,20 +190,23 @@ def test_hints_reveal_one_move_at_a_time(qtbot: QtBot, page: TrainerPage) -> Non
     assert page.hints_shown == 1
     assert not page.hint_panel.image.pixmap().isNull()
     assert page.hint_panel.height() == height
-    assert page.hint_panel.moves.text() == f"(R   (+{total - 1} more)"
+    assert page.hint_panel.moves.text() == "(R"
+    assert page.hint_panel.remaining.text().count("•") == total - 1
 
     for _ in range(3):
         qtbot.keyClick(page, Qt.Key.Key_Right)
     # Four moves: the first group is complete, closing bracket included.
-    assert page.hint_panel.moves.text() == f"(R U R' U')   (+{total - 4} more)"
+    assert page.hint_panel.moves.text() == "(R U R' U')"
+    assert page.hint_panel.remaining.text().count("•") == total - 4
 
     qtbot.keyClick(page, Qt.Key.Key_Right)
-    assert page.hint_panel.moves.text().startswith("(R U R' U') (R'   (+")
+    assert page.hint_panel.moves.text() == "(R U R' U') (R'"
 
     for _ in range(total + 3):
         qtbot.keyClick(page, Qt.Key.Key_Right)
     assert page.hints_shown == total
     assert page.hint_panel.moves.text() == T_CASE.alg
+    assert page.hint_panel.remaining.isHidden()
 
 
 def test_hint_does_not_stop_running_solve(
@@ -288,7 +291,7 @@ def test_m_flags_the_last_solve(
     model = page.solves_panel.model
     assert model.data(model.index(0, 3)) == "✗"
     case_row = page.case_stats.proxy
-    assert case_row.data(case_row.index(0, 5)) == "100%"
+    assert case_row.data(case_row.index(0, 4)) == "100%"
 
     qtbot.keyClick(page, Qt.Key.Key_M)
     assert not page.solves.solves[-1].mistake
@@ -582,7 +585,8 @@ def test_trainer_inspection_is_off_by_default_and_separate(qtbot: QtBot) -> None
 
     assert db.get_setting("trainer.inspection") == "1"
     assert db.get_setting("timer.inspection") == "0"
-    items = [trainer.header.itemAt(i) for i in range(trainer.header.count())]
+    header = trainer.header_right
+    items = [header.itemAt(i) for i in range(header.count())]
     widgets = [item.widget() for item in items if item is not None]
     assert widgets.index(trainer.mistake_button) < widgets.index(trainer.options_button)
     assert widgets.index(trainer.options_button) < widgets.index(trainer.back_button)
@@ -620,3 +624,35 @@ def test_filter_button_keeps_its_width(page: TrainerPage) -> None:
         page.update_filter_button()
         assert page.filter_button.width() == width
         assert page.filter_button.sizeHint().width() <= width
+
+
+def test_hint_prompt_is_centred_over_the_timer(page: TrainerPage) -> None:
+    """Before the first hint only the prompt shows: no empty image beside it."""
+    assert page.hint_panel.image.isHidden()
+    assert page.hint_panel.remaining.isHidden()
+
+
+def test_timer_is_centred_between_the_tables(qtbot: QtBot) -> None:
+    """Timer and scramble sit in the middle; the per-case table uses its height."""
+    page = TrainerPage(PLL)
+    qtbot.addWidget(page)
+    page.resize(1280, 700)
+    page.show()
+    qtbot.waitExposed(page)
+
+    def top_and_bottom(widget: QWidget) -> tuple[int, int]:
+        top = widget.mapTo(page, widget.rect().topLeft()).y()
+        return top, top + widget.height()
+
+    for widget in (page.timer, page.scramble_bar):
+        centre = widget.mapTo(page, widget.rect().center()).x()
+        assert abs(centre - page.width() / 2) <= 2
+    solves_top, solves_bottom = top_and_bottom(page.solves_panel.table)
+    cases_top, cases_bottom = top_and_bottom(page.case_stats.table)
+    assert cases_bottom == solves_bottom
+    assert cases_top < solves_top  # starts just under its title, not lower
+    # The scramble is part of the header row, level with the title.
+    scramble_top, scramble_bottom = top_and_bottom(page.scramble_bar)
+    title_top, title_bottom = top_and_bottom(page.title)
+    assert scramble_top <= title_bottom
+    assert title_top <= scramble_bottom

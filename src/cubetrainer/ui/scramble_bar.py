@@ -82,6 +82,8 @@ class ScrambleBar(QWidget):
         self.copy_button.clicked.connect(self.copy)
 
         layout = QHBoxLayout(self)
+        # No margins, so the buttons line up with the header row the bar sits in.
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.prev_button)
         layout.addWidget(self.label, stretch=1)
         layout.addWidget(self.next_button)
