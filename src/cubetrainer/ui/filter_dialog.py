@@ -14,11 +14,14 @@ from PySide6.QtWidgets import (
 )
 
 from cubetrainer.cases.catalog import CaseSet, CaseStatus
-from cubetrainer.cases.filters import CaseFilter
+from cubetrainer.cases.filters import RECENT_SOLVES, CaseFilter, Odds
 
 _PROBABILITY_HELP: str = (
     "Realistic: each case comes up as often as in real solves (in PLL, H, Na and Nb"
-    " are 4 times rarer than most cases, E and Z twice as rare)."
+    " are 4 times rarer than most cases, E and Z twice as rare).\n"
+    "Slowest first: slow cases come up more often, by the square of their mean time"
+    f" over their last {RECENT_SOLVES} solves, more if you often mark them as"
+    " mistakes; cases with fewer than 3 timed solves count as the slowest."
 )
 
 
@@ -28,8 +31,7 @@ class FilterDialog(QDialog):
     Attributes:
         group_boxes: A checkbox per group of the set, keyed by group.
         status_boxes: A checkbox per learning status.
-        equal_button: Picks cases with equal probability.
-        realistic_button: Picks cases with their natural frequency.
+        odds_buttons: A radio button per way of weighting the cases.
         count_label: Says how many cases the filter selects.
         ok_button: Accepts the filter (disabled while it selects nothing).
 
@@ -86,15 +88,12 @@ class FilterDialog(QDialog):
         probability_box = QGroupBox("Probability")
         probability_box.setToolTip(_PROBABILITY_HELP)
         probability_layout = QHBoxLayout(probability_box)
-        self.equal_button: QRadioButton = QRadioButton("Equal")
-        self.realistic_button: QRadioButton = QRadioButton("Realistic")
-        (
-            self.realistic_button if case_filter.realistic else self.equal_button
-        ).setChecked(
-            True,
-        )
-        probability_layout.addWidget(self.equal_button)
-        probability_layout.addWidget(self.realistic_button)
+        self.odds_buttons: dict[Odds, QRadioButton] = {}
+        for odds in Odds:
+            button = QRadioButton(odds.value.capitalize())
+            button.setChecked(odds is case_filter.odds)
+            probability_layout.addWidget(button)
+            self.odds_buttons[odds] = button
         probability_layout.addStretch()
 
         self.count_label: QLabel = QLabel()
@@ -128,7 +127,7 @@ class FilterDialog(QDialog):
             statuses=frozenset(
                 s for s, box in self.status_boxes.items() if box.isChecked()
             ),
-            realistic=self.realistic_button.isChecked(),
+            odds=next(o for o, b in self.odds_buttons.items() if b.isChecked()),
         )
 
     def _set_groups(self, checked: bool) -> None:  # noqa: FBT001

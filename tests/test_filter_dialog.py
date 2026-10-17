@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from pytestqt.qtbot import QtBot
 
 from cubetrainer.cases.catalog import CaseStatus, load_case_set
-from cubetrainer.cases.filters import CaseFilter
+from cubetrainer.cases.filters import CaseFilter, Odds
 from cubetrainer.ui.filter_dialog import FilterDialog
 
 PLL = load_case_set("pll")
@@ -39,7 +39,7 @@ def test_starts_from_the_given_filter(qtbot: QtBot) -> None:
         CaseFilter(
             groups=frozenset({"Edges Only"}),
             statuses=frozenset({CaseStatus.LEARNING}),
-            realistic=True,
+            odds=Odds.REALISTIC,
         ),
         {"H": CaseStatus.LEARNING},
     )
@@ -47,7 +47,7 @@ def test_starts_from_the_given_filter(qtbot: QtBot) -> None:
     assert [b.isChecked() for b in dialog.group_boxes.values()] == [False, False, True]
     assert dialog.status_boxes[CaseStatus.LEARNING].isChecked()
     assert not dialog.status_boxes[CaseStatus.UNLEARNED].isChecked()
-    assert dialog.realistic_button.isChecked()
+    assert dialog.odds_buttons[Odds.REALISTIC].isChecked()
     assert dialog.count_label.text() == "1 of 21 cases selected"
 
 
@@ -89,11 +89,26 @@ def test_reads_back_a_new_filter(qtbot: QtBot) -> None:
 
     dialog.group_boxes["Adjacent Corner Swap"].setChecked(False)
     dialog.status_boxes[CaseStatus.FINISHED].setChecked(False)
-    dialog.realistic_button.setChecked(True)
+    dialog.odds_buttons[Odds.REALISTIC].setChecked(True)
 
     assert dialog.case_filter() == CaseFilter(
         groups=frozenset({"Diagonal Corner Swap", "Edges Only"}),
         statuses=frozenset({CaseStatus.UNLEARNED, CaseStatus.LEARNING}),
-        realistic=True,
+        odds=Odds.REALISTIC,
     )
     assert dialog.count_label.text() == "9 of 21 cases selected"
+
+
+def test_slowest_first_option(qtbot: QtBot) -> None:
+    """The third probability choice reads back as slowest first."""
+    dialog = make_dialog(qtbot, CaseFilter(odds=Odds.SLOWEST))
+    assert dialog.odds_buttons[Odds.SLOWEST].isChecked()
+    assert [b.text() for b in dialog.odds_buttons.values()] == [
+        "Equal",
+        "Realistic",
+        "Slowest first",
+    ]
+
+    dialog.odds_buttons[Odds.EQUAL].setChecked(True)
+
+    assert dialog.case_filter().odds is Odds.EQUAL

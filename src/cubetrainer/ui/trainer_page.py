@@ -10,7 +10,7 @@ from PySide6.QtGui import QFont, QPixmap, QShowEvent
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from cubetrainer.cases.catalog import Case, CaseSet
-from cubetrainer.cases.filters import MemoryTrainerPrefs, TrainerPrefs
+from cubetrainer.cases.filters import MemoryTrainerPrefs, Odds, TrainerPrefs
 from cubetrainer.cases.trainer import (
     CaseRecognizer,
     active_cases,
@@ -106,6 +106,25 @@ class HintPanel(QWidget):
         self.moves.setText(reveal_alg(alg, revealed) + more)
 
 
+def filter_text(count: int, odds: Odds, *, fell_back: bool) -> str:
+    """Describe the trainer's filter for its button.
+
+    Args:
+        count: How many cases the trainer picks from.
+        odds: How likely each case is.
+        fell_back: Whether no case matched, so every case is used.
+
+    Returns:
+        e.g. ``"12 cases · slowest  ▾"``, or ``"⚠ all 21 · equal  ▾"`` when no case
+        matched (the tooltip explains).
+
+    """
+    if fell_back:
+        return f"⚠ all {count} · {odds.short}  ▾"
+    noun = "case" if count == 1 else "cases"
+    return f"{count} {noun} · {odds.short}  ▾"
+
+
 class TrainerPage(TimerPage):
     """Timer page whose scrambles set up cases of a set, recording the case of each.
 
@@ -155,7 +174,12 @@ class TrainerPage(TimerPage):
         prefs = prefs if prefs is not None else MemoryTrainerPrefs()
         super().__init__(
             sessions=sessions,
-            generate=filtered_case_scrambles(case_set, prefs, np.random.default_rng()),
+            generate=filtered_case_scrambles(
+                case_set,
+                prefs,
+                np.random.default_rng(),
+                history=self.set_history,
+            ),
             clock=clock,
             settings=prefs,
             parent=parent,
@@ -167,6 +191,7 @@ class TrainerPage(TimerPage):
 
         self._pending_mistake: bool = False
         self._fill_header()
+        self._fix_filter_button_width()
 
         self.hints_shown: int = 0
         self._hint_alg: str = ""
@@ -249,15 +274,45 @@ class TrainerPage(TimerPage):
             self.update_filter_button()
             self.scramble_bar.show_new()
 
+    def set_history(self) -> list[Solve]:
+        """Return the solves of every session of the set, oldest first.
+
+        Returns:
+            The solves (slowest-first odds rate each case on its latest ones).
+
+        """
+        solves = [
+            solve
+            for info in self.sessions.sessions()
+            for solve in self.sessions.solves(info.id).solves
+        ]
+        return sorted(solves, key=lambda solve: solve.created_at)
+
     def update_filter_button(self) -> None:
         """Describe the current filter on its button, e.g. ``"12 cases · equal ▾"``."""
         cases, fell_back = active_cases(self.case_set, self.prefs)
-        mode = "realistic" if self.prefs.load_filter().realistic else "equal"
-        if fell_back:
-            self.filter_button.setText(f"No case matches: all {len(cases)} · {mode}  ▾")
-        else:
-            noun = "case" if len(cases) == 1 else "cases"
-            self.filter_button.setText(f"{len(cases)} {noun} · {mode}  ▾")
+        odds = self.prefs.load_filter().odds
+        self.filter_button.setText(filter_text(len(cases), odds, fell_back=fell_back))
+        self.filter_button.setToolTip(
+            "No case matches the filter, so every case is trained."
+            " Click to choose which cases to train"
+            if fell_back
+            else "Choose which cases to train",
+        )
+
+    def _fix_filter_button_width(self) -> None:
+        """Size the filter button for its longest text, so it never changes size.
+
+        Otherwise a change of filter would resize the button and shift the header
+        (and, when the header is the widest part, the whole window).
+        """
+        widest = 0
+        for odds in Odds:
+            for fell_back in (False, True):
+                text = filter_text(len(self.case_set.cases), odds, fell_back=fell_back)
+                self.filter_button.setText(text)
+                widest = max(widest, self.filter_button.sizeHint().width())
+        self.filter_button.setFixedWidth(widest)
 
     @override
     def showEvent(self, event: QShowEvent) -> None:

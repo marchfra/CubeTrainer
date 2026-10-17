@@ -10,7 +10,7 @@ The case of a scramble is never stored alongside it: it's recognised from the
 scramble itself, so the two can never disagree.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from fractions import Fraction
 
 import numpy as np
@@ -40,6 +40,7 @@ from cubetrainer.cube.model import (
     state_solved_by,
 )
 from cubetrainer.cube.scramble import solve_facelets
+from cubetrainer.solves import Solve
 
 
 def _u_turn(turns: int) -> list[Move]:
@@ -230,6 +231,7 @@ def filtered_case_scrambles(
     case_set: CaseSet,
     prefs: TrainerPrefs,
     rng: np.random.Generator,
+    history: Callable[[], Sequence[Solve]] = tuple,
 ) -> Callable[[], str]:
     """Build a generator of scrambles for cases picked according to the filter.
 
@@ -240,6 +242,8 @@ def filtered_case_scrambles(
         case_set: The set being trained.
         prefs: Where the filter and the learning statuses come from.
         rng: Random number generator.
+        history: Returns the set's solves, oldest first, for slowest-first odds
+            (read on every call, so it includes the latest solve).
 
     Returns:
         A function returning a new case scramble each time it's called.
@@ -250,7 +254,7 @@ def filtered_case_scrambles(
         # The user's algorithms decide the orientation the case is set up in.
         current = customize(case_set, prefs.customizations())
         cases, _ = active_cases(current, prefs)
-        case = pick_case(cases, rng, realistic=prefs.load_filter().realistic)
+        case = pick_case(cases, rng, prefs.load_filter().odds, history())
         return case_scramble(case, rng)
 
     return generate

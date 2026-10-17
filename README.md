@@ -66,11 +66,21 @@ and averages and means are rounded to the nearest hundredth.
   edges. Scrambles are random-state style, so they don't
   give away the algorithm.
 - **Case filter** (the *N cases · equal ▾* button): choose groups and learning
-  statuses (a case must match both), and whether cases come up with equal
-  probability or with their real-solve frequency (*realistic*: in PLL, H/Na/Nb are
-  1/72, E/Z 1/36, the rest 1/18; in OLL, 20 is 1/216, 1/21/55/56/57 are 1/108, the
-  rest 1/54; in 2-look sets each case's odds are within its own look). The filter is saved per set; if status changes
-  leave nothing selected, the trainer falls back to all cases and says so.
+  statuses (a case must match both), and how likely each case is:
+  - *Equal*: every case equally often.
+  - *Realistic*: as often as in real solves. In PLL, H/Na/Nb are 1/72, E/Z 1/36
+    and the rest 1/18; in OLL, 20 is 1/216, 1/21/55/56/57 are 1/108 and the rest
+    1/54; in 2-look sets each case's odds are within its own look.
+  - *Slowest first*: slow cases come up more often. Each case is rated on its
+    last 12 solves across all the set's sessions: the weight is the square of
+    the mean time (mistakes and DNFs left out), times 1 + the share of
+    mistakes. A case twice as slow comes up four times as often. Cases with
+    fewer than 3 timed solves count as the slowest, so new cases get practised.
+
+  The button shows the odds in one word (*equal*, *realistic*, *slowest*) and
+  keeps the same width whatever the filter. The filter is saved per set; if
+  status changes leave nothing selected, the trainer falls back to all cases and
+  the button shows *⚠ all N* (its tooltip explains).
 - The solves table has a case column, and the solve dialog shows the case's name
   and image. The case is recognised from the scramble itself.
 - Trainer solves are kept apart from full solves: each set's trainer has its own

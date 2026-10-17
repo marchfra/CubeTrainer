@@ -9,7 +9,7 @@ import platformdirs
 import pytest
 
 from cubetrainer.cases.catalog import CaseStatus
-from cubetrainer.cases.filters import CaseFilter
+from cubetrainer.cases.filters import CaseFilter, Odds
 from cubetrainer.db import (
     DATA_DIR_ENV,
     DB_FILENAME,
@@ -257,7 +257,7 @@ def test_stored_trainer_prefs(db_path: Path) -> None:
     prefs = StoredTrainerPrefs(db, "pll")
     assert prefs.load_filter() == CaseFilter()
 
-    case_filter = CaseFilter(groups=frozenset({"Edges Only"}), realistic=True)
+    case_filter = CaseFilter(groups=frozenset({"Edges Only"}), odds=Odds.REALISTIC)
     prefs.save_filter(case_filter)
     db.set_case_status("pll", "H", CaseStatus.LEARNING)
     db.close()

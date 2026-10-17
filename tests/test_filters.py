@@ -1,23 +1,29 @@
 """Tests for case filters and case probabilities."""
 
+import math
 from collections import Counter
+from datetime import UTC, datetime, timedelta
 from fractions import Fraction
 
 import numpy as np
 import pytest
 
-from cubetrainer.cases.catalog import CaseStatus, load_case_set
+from cubetrainer.cases.catalog import Case, CaseStatus, load_case_set
 from cubetrainer.cases.filters import (
+    RECENT_SOLVES,
     CaseFilter,
     MemoryTrainerPrefs,
+    Odds,
     case_probability,
     pick_case,
+    slowness_weights,
 )
 from cubetrainer.cases.trainer import (
     CaseRecognizer,
     active_cases,
     filtered_case_scrambles,
 )
+from cubetrainer.solves import Penalty, Solve
 
 PLL = load_case_set("pll")
 EDGES_ONLY = frozenset({"Edges Only"})
@@ -39,7 +45,7 @@ def test_default_filter_keeps_everything() -> None:
     default = CaseFilter()
 
     assert default.matching(PLL, {}) == list(PLL.cases)
-    assert not default.realistic
+    assert default.odds is Odds.EQUAL
 
 
 def test_filter_by_group_and_status() -> None:
@@ -75,8 +81,9 @@ def test_missing_status_counts_as_unlearned() -> None:
     "case_filter",
     [
         CaseFilter(),
-        CaseFilter(groups=EDGES_ONLY, statuses=frozenset(), realistic=True),
+        CaseFilter(groups=EDGES_ONLY, statuses=frozenset(), odds=Odds.REALISTIC),
         CaseFilter(groups=frozenset(), statuses=frozenset({CaseStatus.FINISHED})),
+        CaseFilter(odds=Odds.SLOWEST),
     ],
 )
 def test_json_round_trip(case_filter: CaseFilter) -> None:
@@ -148,7 +155,7 @@ def test_realistic_picks_follow_the_weights() -> None:
     rng = np.random.default_rng(0)
     cases = [c for c in PLL.cases if c.id in {"H", "T"}]
 
-    counts = Counter(pick_case(cases, rng, realistic=True).id for _ in range(5_000))
+    counts = Counter(pick_case(cases, rng, Odds.REALISTIC).id for _ in range(5_000))
 
     assert counts["H"] / 5_000 == pytest.approx(0.2, abs=0.03)
 
@@ -158,7 +165,7 @@ def test_equal_picks_are_even() -> None:
     rng = np.random.default_rng(0)
     cases = [c for c in PLL.cases if c.id in {"H", "T"}]
 
-    counts = Counter(pick_case(cases, rng, realistic=False).id for _ in range(5_000))
+    counts = Counter(pick_case(cases, rng, Odds.EQUAL).id for _ in range(5_000))
 
     assert counts["H"] / 5_000 == pytest.approx(0.5, abs=0.03)
 
@@ -187,3 +194,131 @@ def test_generated_scrambles_respect_the_filter() -> None:
     prefs.save_filter(CaseFilter(groups=frozenset({"Diagonal Corner Swap"})))
     seen = {recognizer.recognize(generate()) for _ in range(20)}
     assert {case.group for case in seen if case} == {"Diagonal Corner Swap"}
+
+
+def test_filters_saved_before_slowest_first_still_load() -> None:
+    """Old filters stored a "realistic" flag instead of the odds."""
+    old = '{"groups": null, "statuses": ["learning"], "realistic": %s}'
+
+    assert CaseFilter.from_json(old % "true").odds is Odds.REALISTIC
+    assert CaseFilter.from_json(old % "false").odds is Odds.EQUAL
+
+
+START = datetime(2026, 10, 1, tzinfo=UTC)
+
+
+def history_of(*runs: tuple[str, list[float]], mistakes: int = 0) -> list[Solve]:
+    """Build trainer solves, a minute apart, oldest first.
+
+    Args:
+        runs: (case id, times in seconds; ``math.inf`` for a DNF) for each case.
+        mistakes: How many of each case's last solves are mistakes.
+
+    Returns:
+        The solves, every case's in a row.
+
+    """
+    solves: list[Solve] = []
+    for case_id, seconds in runs:
+        for i, value in enumerate(seconds):
+            solves.append(
+                Solve(
+                    int(value * 1000) if math.isfinite(value) else 5_000,
+                    "",
+                    Penalty.OK if math.isfinite(value) else Penalty.DNF,
+                    START + timedelta(minutes=len(solves)),
+                    case_id=case_id,
+                    mistake=i >= len(seconds) - mistakes,
+                ),
+            )
+    return solves
+
+
+def cases_of(*ids: str) -> list[Case]:
+    """Return PLL cases by id.
+
+    Args:
+        ids: The case ids.
+
+    Returns:
+        The cases, in the given order.
+
+    """
+    by_id = {case.id: case for case in PLL.cases}
+    return [by_id[case_id] for case_id in ids]
+
+
+def test_slowness_is_the_squared_mean_time() -> None:
+    """A case twice as slow weighs four times as much."""
+    history = history_of(("T", [2.0, 2.0, 2.0]), ("H", [4.0, 4.0, 4.0]))
+
+    weights = slowness_weights(cases_of("T", "H"), history)
+
+    assert weights.tolist() == pytest.approx([4.0, 16.0])
+
+
+def test_slowness_uses_the_latest_solves_only() -> None:
+    """Only the last 12 solves count, so improving a case lowers its weight."""
+    history = history_of(("T", [10.0] * 20 + [2.0] * RECENT_SOLVES))
+
+    assert slowness_weights(cases_of("T"), history).tolist() == pytest.approx([4.0])
+
+
+def test_mistakes_add_weight_and_are_left_out_of_the_mean() -> None:
+    """Mistakes (and DNFs) don't count as times; mistakes raise the weight."""
+    times = [2.0, 2.0, math.inf, 2.0, 9.0, 9.0]  # the two 9.0 are mistakes
+    history = history_of(("T", times), mistakes=2)
+
+    weights = slowness_weights(cases_of("T"), history)
+
+    assert weights.tolist() == pytest.approx([4.0 * (1 + 2 / 6)])
+
+
+def test_cases_without_enough_times_count_as_the_slowest() -> None:
+    """Cases with fewer than three timed solves get the largest weight."""
+    history = history_of(
+        ("T", [2.0, 2.0, 2.0]),
+        ("H", [3.0, 3.0, 3.0]),
+        ("Z", [1.0, 1.0]),
+    )
+
+    weights = slowness_weights(cases_of("T", "H", "Z", "Ua"), history)
+
+    assert weights.tolist() == pytest.approx([4.0, 9.0, 9.0, 9.0])
+
+
+def test_without_any_times_slowest_first_is_equal() -> None:
+    """With no rated case every case weighs the same."""
+    assert slowness_weights(cases_of("T", "H"), []).tolist() == [1.0, 1.0]
+
+
+def test_slowest_first_picks_follow_the_weights() -> None:
+    """H, three times as slow as T, comes up nine times as often."""
+    rng = np.random.default_rng(0)
+    history = history_of(("T", [1.0] * 5), ("H", [3.0] * 5))
+    cases = cases_of("T", "H")
+
+    counts = Counter(
+        pick_case(cases, rng, Odds.SLOWEST, history).id for _ in range(5_000)
+    )
+
+    assert counts["H"] / 5_000 == pytest.approx(0.9, abs=0.02)
+
+
+def test_generated_scrambles_favour_slow_cases() -> None:
+    """The generator reads the history on each call and picks slow cases more."""
+    prefs = MemoryTrainerPrefs(case_filter=CaseFilter(odds=Odds.SLOWEST))
+    times = [(case.id, [1.0] * 3) for case in PLL.cases if case.id != "H"]
+    history = history_of(*times, ("H", [5.0] * 3))
+    generate = filtered_case_scrambles(
+        PLL,
+        prefs,
+        np.random.default_rng(4),
+        history=lambda: history,
+    )
+    recognizer = CaseRecognizer(PLL)
+
+    picked = Counter(recognizer.recognize(generate()) for _ in range(40))
+
+    # H weighs 25 against 1 for each of the other 20 cases: about 56% of picks.
+    assert picked[next(c for c in PLL.cases if c.id == "H")] >= 15

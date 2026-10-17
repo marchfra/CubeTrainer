@@ -6,9 +6,10 @@ from PySide6.QtWidgets import QDialog, QLabel
 from pytestqt.qtbot import QtBot
 
 from cubetrainer.cases.catalog import CaseCustomization, CaseStatus, load_case_set
-from cubetrainer.cases.filters import CaseFilter, MemoryTrainerPrefs
+from cubetrainer.cases.filters import CaseFilter, MemoryTrainerPrefs, Odds
 from cubetrainer.cube.model import parse_alg
 from cubetrainer.db import Database
+from cubetrainer.sessions import MemorySessionStore
 from cubetrainer.solves import Solve
 from cubetrainer.timing import TimerState
 from cubetrainer.ui.case_images import case_pixmap
@@ -448,13 +449,13 @@ def test_accepting_the_filter_saves_it_and_rescrambles(page: TrainerPage) -> Non
     def run_dialog(dialog: QDialog) -> int:
         assert isinstance(dialog, FilterDialog)
         dialog.status_boxes[CaseStatus.UNLEARNED].setChecked(True)
-        dialog.realistic_button.setChecked(True)
+        dialog.odds_buttons[Odds.REALISTIC].setChecked(True)
         return QDialog.DialogCode.Accepted
 
     page.run_dialog = run_dialog
     page.edit_filter()
 
-    assert page.prefs.load_filter().realistic
+    assert page.prefs.load_filter().odds is Odds.REALISTIC
     assert CaseStatus.UNLEARNED in page.prefs.load_filter().statuses
     assert page.filter_button.text() == "21 cases · realistic  ▾"
     assert page.scramble_bar.history.index == first + 1
@@ -467,7 +468,7 @@ def test_cancelling_the_filter_changes_nothing(page: TrainerPage) -> None:
 
     def run_dialog(dialog: QDialog) -> int:
         assert isinstance(dialog, FilterDialog)
-        dialog.realistic_button.setChecked(True)
+        dialog.odds_buttons[Odds.REALISTIC].setChecked(True)
         return QDialog.DialogCode.Rejected
 
     page.run_dialog = run_dialog
@@ -491,7 +492,8 @@ def test_filter_button_warns_when_nothing_matches(qtbot: QtBot) -> None:
     page.hide()
     page.show()  # showing the page again refreshes the button
 
-    assert page.filter_button.text() == "No case matches: all 21 · equal  ▾"
+    assert page.filter_button.text() == "⚠ all 21 · equal  ▾"
+    assert page.filter_button.toolTip().startswith("No case matches the filter")
 
 
 def test_oll_trainer_recognises_and_hints(qtbot: QtBot, clock: FakeClock) -> None:
@@ -584,3 +586,37 @@ def test_trainer_inspection_is_off_by_default_and_separate(qtbot: QtBot) -> None
     widgets = [item.widget() for item in items if item is not None]
     assert widgets.index(trainer.mistake_button) < widgets.index(trainer.options_button)
     assert widgets.index(trainer.options_button) < widgets.index(trainer.back_button)
+
+
+def test_set_history_spans_every_session(qtbot: QtBot, clock: FakeClock) -> None:
+    """Slowest first rates cases on the solves of all the set's sessions."""
+    sessions = MemorySessionStore()
+    page = TrainerPage(PLL, sessions=sessions, clock=clock)
+    qtbot.addWidget(page)
+    page.show()
+    do_solve(qtbot, page, clock, 1_500)
+    page.switch_session(sessions.create("Second"))
+    do_solve(qtbot, page, clock, 2_500)
+
+    assert [s.time_ms for s in page.set_history()] == [1_500, 2_500]
+
+
+def test_filter_button_names_slowest_first(qtbot: QtBot) -> None:
+    """The filter button shows the odds of the saved filter."""
+    prefs = MemoryTrainerPrefs(case_filter=CaseFilter(odds=Odds.SLOWEST))
+    page = TrainerPage(PLL, prefs=prefs)
+    qtbot.addWidget(page)
+
+    assert page.filter_button.text() == "21 cases · slowest  ▾"
+
+
+def test_filter_button_keeps_its_width(page: TrainerPage) -> None:
+    """Changing the filter never resizes the button (nor shifts the header)."""
+    width = page.filter_button.width()
+    assert page.filter_button.minimumWidth() == page.filter_button.maximumWidth()
+
+    for odds in Odds:
+        page.prefs.save_filter(CaseFilter(odds=odds))
+        page.update_filter_button()
+        assert page.filter_button.width() == width
+        assert page.filter_button.sizeHint().width() <= width

@@ -1,17 +1,21 @@
 """Which cases the trainer picks, and how likely each one is.
 
 A filter keeps the cases whose group *and* learning status are selected. Cases are
-then picked either with equal probability or with their natural ("realistic")
-frequency, i.e. how often they come up in real solves.
+then picked with equal probability, with their natural ("realistic") frequency,
+i.e. how often they come up in real solves, or slowest first: weighted by how slow
+and error-prone your recent solves of each case are.
 """
 
 from __future__ import annotations
 
 import json
+import math
+from collections import defaultdict
 from dataclasses import dataclass, field
+from enum import StrEnum
 from fractions import Fraction
 from functools import cache
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
@@ -26,6 +30,29 @@ from cubetrainer.cases.recognition import corner_pattern, eo_pattern, oll_patter
 from cubetrainer.cube.model import Move, parse_alg, state_solved_by
 from cubetrainer.settings import Settings
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from cubetrainer.solves import Solve
+
+
+class Odds(StrEnum):
+    """How likely each case passing the filter is to come up."""
+
+    EQUAL = "equal"
+    REALISTIC = "realistic"
+    SLOWEST = "slowest first"
+
+    @property
+    def short(self) -> str:
+        """Return a one-word name, for the trainer's filter button.
+
+        Returns:
+            e.g. ``"slowest"``.
+
+        """
+        return self.value.split()[0]
+
 
 @dataclass(frozen=True, slots=True)
 class CaseFilter:
@@ -35,7 +62,7 @@ class CaseFilter:
         groups: Selected groups, or None for every group (including ones a set may
             gain later).
         statuses: Selected learning statuses.
-        realistic: Pick cases with their natural frequency instead of equally.
+        odds: How likely each case is to be picked.
 
     """
 
@@ -43,7 +70,7 @@ class CaseFilter:
     statuses: frozenset[CaseStatus] = field(
         default_factory=lambda: frozenset(CaseStatus),
     )
-    realistic: bool = False
+    odds: Odds = Odds.EQUAL
 
     def matching(
         self,
@@ -78,7 +105,7 @@ class CaseFilter:
             {
                 "groups": None if self.groups is None else sorted(self.groups),
                 "statuses": sorted(s.value for s in self.statuses),
-                "realistic": self.realistic,
+                "odds": self.odds.value,
             },
         )
 
@@ -95,10 +122,14 @@ class CaseFilter:
         """
         data = json.loads(text)
         groups = data["groups"]
+        if "odds" in data:
+            odds = Odds(data["odds"])
+        else:  # saved before slowest first existed: a "realistic" flag
+            odds = Odds.REALISTIC if data.get("realistic") else Odds.EQUAL
         return cls(
             groups=None if groups is None else frozenset(groups),
             statuses=frozenset(CaseStatus(s) for s in data["statuses"]),
-            realistic=bool(data["realistic"]),
+            odds=odds,
         )
 
 
@@ -292,20 +323,77 @@ def _case_looks(alg: str, kind: CaseKind) -> int:
             )
 
 
-def pick_case(cases: list[Case], rng: np.random.Generator, *, realistic: bool) -> Case:
+#: Slowest first: how many of a case's latest solves describe it.
+RECENT_SOLVES: int = 12
+
+#: Slowest first: fewest timed solves (finished, not mistakes) to rate a case;
+#: cases with fewer are treated like the slowest one, so they get practised.
+MIN_TIMED_SOLVES: int = 3
+
+#: Slowest first: the weight grows with the mean time to this power.
+SLOWNESS_POWER: int = 2
+
+
+def slowness_weights(cases: Sequence[Case], history: Sequence[Solve]) -> np.ndarray:
+    """Weight cases by how slow and error-prone their latest solves are.
+
+    Each case is rated on its last ``RECENT_SOLVES`` solves: its weight is the mean
+    time of those that are finished and not mistakes, to the power
+    ``SLOWNESS_POWER``, times (1 + the share of them that are mistakes). Cases with
+    fewer than ``MIN_TIMED_SOLVES`` timed solves get the largest weight of the
+    others (all cases are equal if none can be rated).
+
+    Args:
+        cases: The candidate cases.
+        history: Solves of the set, oldest first (other cases' solves are ignored).
+
+    Returns:
+        One positive weight per case, in order (not normalised).
+
+    """
+    recent: dict[str | None, list[Solve]] = defaultdict(list)
+    for solve in history:
+        recent[solve.case_id].append(solve)
+    rated: list[float | None] = []
+    for case in cases:
+        latest = recent[case.id][-RECENT_SOLVES:]
+        timed = [s.value for s in latest if not s.mistake and math.isfinite(s.value)]
+        if len(timed) < MIN_TIMED_SOLVES:
+            rated.append(None)
+            continue
+        mean_seconds = sum(timed) / len(timed) / 1000
+        mistakes = sum(s.mistake for s in latest) / len(latest)
+        rated.append(mean_seconds**SLOWNESS_POWER * (1 + mistakes))
+    known = [w for w in rated if w is not None]
+    unknown = max(known, default=1.0)
+    return np.array([unknown if w is None else w for w in rated])
+
+
+def pick_case(
+    cases: list[Case],
+    rng: np.random.Generator,
+    odds: Odds,
+    history: Sequence[Solve] = (),
+) -> Case:
     """Pick one of some cases.
 
     Args:
         cases: The candidate cases (not empty).
         rng: Random number generator.
-        realistic: Weight cases by their real-solve probability instead of equally;
-            in 2-look sets each look is weighted within its own step.
+        odds: How to weight the cases: equally; by their real-solve probability (in
+            2-look sets each look is weighted within its own step); or slowest
+            first (see ``slowness_weights``).
+        history: The set's solves, oldest first (used by slowest first).
 
     Returns:
         The chosen case.
 
     """
-    if not realistic:
-        return cases[int(rng.integers(len(cases)))]
-    weights = np.array([float(case_probability(case)) for case in cases])
+    match odds:
+        case Odds.EQUAL:
+            return cases[int(rng.integers(len(cases)))]
+        case Odds.REALISTIC:
+            weights = np.array([float(case_probability(case)) for case in cases])
+        case Odds.SLOWEST:
+            weights = slowness_weights(cases, history)
     return cases[int(rng.choice(len(cases), p=weights / weights.sum()))]
