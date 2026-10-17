@@ -31,6 +31,7 @@ from cubetrainer.db import Database, DbSessionStore, trainer_session_kind
 from cubetrainer.formatting import format_average, format_value
 from cubetrainer.ui.case_editor import CaseEditor
 from cubetrainer.ui.case_images import case_pixmap
+from cubetrainer.ui.notation_dialog import NotationDialog
 from cubetrainer.ui.sizing import reserve_width
 
 if TYPE_CHECKING:
@@ -341,6 +342,8 @@ class LearnPage(QWidget):
         set_picker: Button showing the current set; clicking it opens ``set_menu``.
         set_menu: Menu choosing which set to show.
         train_button: Starts the trainer for the selected set.
+        notation_button: Shows the move notation reference.
+        run_dialog: Runs a dialog and returns its result; replaceable in tests.
         case_list: The list for the selected set.
 
     """
@@ -374,6 +377,11 @@ class LearnPage(QWidget):
         self.train_button.clicked.connect(
             lambda: self.train_requested.emit(self.case_list.case_set.id),
         )
+        self.notation_button: QPushButton = QPushButton("Notation")
+        self.notation_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.notation_button.setToolTip("What each move in the algorithms means")
+        self.notation_button.clicked.connect(self.show_notation)
+        self.run_dialog: Callable[[QDialog], int] = lambda d: d.exec()
 
         self._scroll: QScrollArea = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -385,6 +393,7 @@ class LearnPage(QWidget):
         top.addWidget(QLabel("Set:"))
         top.addWidget(self.set_picker)
         top.addWidget(self.train_button)
+        top.addWidget(self.notation_button)
         top.addStretch()
         hint = QLabel("Click a case image to cycle unlearned → learning → finished")
         top.addWidget(hint)
@@ -400,6 +409,10 @@ class LearnPage(QWidget):
 
         self.case_list: CaseList = CaseList(load_case_set(DEFAULT_SET), db)
         self._show_case_list(self.case_list)
+
+    def show_notation(self) -> None:
+        """Show the move notation reference."""
+        self.run_dialog(NotationDialog(self))
 
     def _pop_up_set_menu(self) -> None:
         """Show the set menu just below the picker."""

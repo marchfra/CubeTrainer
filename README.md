@@ -59,6 +59,12 @@ and averages and means are rounded to the nearest hundredth.
   turns), upload your own image, or rotate the image in quarter turns. The
   generated image follows your algorithm, so it shows the case the way you hold
   the cube. Your algorithm is used everywhere: list, hints and scrambles.
+- **Notation** (next to *Train*): every move the algorithms can use: face turns,
+  wide moves (`r` or `Rw`), slices (M, E, S) and rotations (x, y, z), each with a
+  one-line description and a picture of the cube with the turned layers in colour
+  and arrows showing which way they go; plus what `'`, `2` and brackets mean. The
+  list is generated from the algorithm parser's own move table, so it always
+  matches what's accepted.
 - Click a case image to cycle its status: unlearned → learning → finished (shown as
   the image's background colour, and named on hover). Statuses are saved.
 

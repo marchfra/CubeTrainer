@@ -120,6 +120,42 @@ _BASE_MOVES: dict[str, tuple[Vec, Callable[[int], bool]]] = {
 }
 
 
+#: Every base move the parser accepts, in table order.
+BASE_MOVES: tuple[str, ...] = tuple(_BASE_MOVES)
+
+#: Move suffixes and the clockwise quarter turns they mean.
+SUFFIX_TURNS: dict[str, int] = {"": 1, "2": 2, "2'": 2, "'": 3}
+
+
+def move_axis(base: str) -> Vec:
+    """Return the axis a base move turns around (clockwise looking at it).
+
+    Args:
+        base: Base move name, e.g. ``"R"`` or ``"M"``.
+
+    Returns:
+        The outward normal of the face the move turns like (``M`` turns like L).
+
+    """
+    return _BASE_MOVES[base][0]
+
+
+def turned_stickers(base: str) -> frozenset[int]:
+    """Return the stickers (facelet indices) on the layers a base move turns.
+
+    Args:
+        base: Base move name.
+
+    Returns:
+        The indices, centres included (they turn in place).
+
+    """
+    axis, in_layer = _BASE_MOVES[base]
+    return frozenset(
+        i for i, (position, _) in enumerate(STICKERS) if in_layer(_dot(position, axis))
+    )
+
+
 @cache
 def _quarter_turn_permutation(base: str) -> tuple[int, ...]:
     """Compute where each sticker goes under one clockwise quarter turn of a move.
@@ -227,7 +263,7 @@ def parse_alg(text: str) -> list[Move]:
         base, suffix = match.groups()
         if base.endswith("w"):
             base = base[0].lower()
-        turns = {"": 1, "2": 2, "2'": 2, "'": 3}[suffix]
+        turns = SUFFIX_TURNS[suffix]
         moves.append(Move(base, turns))
         pos = match.end()
     return moves
