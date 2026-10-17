@@ -588,8 +588,8 @@ def test_trainer_inspection_is_off_by_default_and_separate(qtbot: QtBot) -> None
     header = trainer.header_right
     items = [header.itemAt(i) for i in range(header.count())]
     widgets = [item.widget() for item in items if item is not None]
-    assert widgets.index(trainer.mistake_button) < widgets.index(trainer.options_button)
-    assert widgets.index(trainer.options_button) < widgets.index(trainer.back_button)
+    assert widgets.index(trainer.mistake_button) < widgets.index(trainer.back_button)
+    assert trainer.options_button.parent() is trainer.timer  # the cog in its corner
 
 
 def test_set_history_spans_every_session(qtbot: QtBot, clock: FakeClock) -> None:

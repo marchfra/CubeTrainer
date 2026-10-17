@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import override
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QKeyEvent
+from PySide6.QtGui import QFont, QKeyEvent, QResizeEvent
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 
 from cubetrainer.inspection import inspection_text, warnings_between
 from cubetrainer.timing import TimerMachine, TimerState, format_ms
+from cubetrainer.ui.icon_buttons import CogButton, KeyboardButton
+from cubetrainer.ui.shortcuts import Shortcut
 
 #: Display colour for each state; an empty string means the default text colour.
 STATE_COLORS: dict[TimerState, str] = {
@@ -52,6 +54,13 @@ MODIFIER_KEYS: frozenset[Qt.Key] = frozenset(
 
 _REFRESH_INTERVAL_MS: int = 10
 
+#: The keys the timer handles itself (in ``_handle_key``), for the shortcuts list.
+TIMER_KEYS: tuple[Shortcut, ...] = (
+    Shortcut("Space", "Hold until green, release to start (or to start inspection)"),
+    Shortcut("Any key", "Stop the timer (modifier keys like ⌘ don't)"),
+    Shortcut("Esc", "Cancel a hold or inspection"),
+)
+
 #: How-to text without inspection.
 HINT_TEXT: str = "Hold space until green, release to start, press any key to stop"
 
@@ -83,6 +92,10 @@ class TimerWidget(QWidget):
         machine: The underlying state machine.
         display: The label showing the time.
         hint: How-to text under the time.
+        shortcuts_button: Small button in the bottom-right corner; the page shows
+            the shortcuts when it's clicked.
+        options_button: Small button left of ``shortcuts_button``; the page shows
+            its options menu when it's clicked.
 
     """
 
@@ -118,6 +131,10 @@ class TimerWidget(QWidget):
         self.hint: QLabel = QLabel(HINT_TEXT)
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        # In the bottom-right corner, outside the layout, so the time stays
+        # centred (``resizeEvent`` keeps them in place): options, then shortcuts.
+        self.shortcuts_button: KeyboardButton = KeyboardButton(self)
+        self.options_button: CogButton = CogButton("Options", self)
         layout = QVBoxLayout(self)
         layout.addStretch()
         layout.addWidget(self.display)
@@ -212,6 +229,21 @@ class TimerWidget(QWidget):
         ):
             return self._handle_key(event)
         return super().eventFilter(watched, event)
+
+    @override
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Keep the options and shortcuts buttons in the bottom-right corner.
+
+        Args:
+            event: The resize event.
+
+        """
+        super().resizeEvent(event)
+        right = self.width()
+        for button in (self.shortcuts_button, self.options_button):
+            size = button.sizeHint()
+            right -= size.width()
+            button.move(right, self.height() - size.height())
 
     def _handle_key(self, event: QKeyEvent) -> bool:
         """Apply a captured key press or release to the timer.

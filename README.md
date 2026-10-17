@@ -10,7 +10,7 @@ Built with Python and PySide6.
 
 - Spacebar timer: hold until the display turns green (0.3 s), release to start, press
   any key to stop. Modifier keys (e.g. Cmd+Tab) don't stop a solve; Esc cancels a hold.
-- WCA inspection (*Options ▾*, on by default): the first press starts a 15 s
+- WCA inspection (the ⚙ options in the timer's bottom-right corner, on by default): the first press starts a 15 s
   countdown (or, with *Hold space to start inspection*, a hold until green does);
   starting after 15 s is +2, after 17 s DNF. Optional beeps at 8 s (one) and 12 s
   (two), like a judge's calls. Esc cancels inspection.
@@ -26,6 +26,11 @@ Built with Python and PySide6.
   takes its solves with it; the last session can't be deleted). Statistics are
   per session, and the current session is remembered.
 - Solves are saved automatically and survive restarts.
+
+The small keyboard button in the timer's bottom-right corner (next to the ⚙
+options) lists every key the timer and the
+current page react to; the list is generated from the shortcuts as they are
+registered, so it's always complete.
 
 | Shortcut | Action |
 |---|---|
@@ -98,7 +103,7 @@ and averages and means are rounded to the nearest hundredth.
   last solve. The solve dialog has a *Mistake* checkbox too.
 - The solves table shows flags: ✗ for a mistake, 💡n for n hint steps used.
 - **Layout:** the top row holds the trainer's name and filter on the left, the
-  scramble in the middle and *Mistake*, *Options* and *← Full timer* on the
+  scramble in the middle and *Mistake* and *← Full timer* on the
   right. Below it, the hint and the timer sit in the middle of the window,
   between the session's solves on the left and the per-case table on the right.
 - **Per-case table:** n, avg, ao5 and err% (mistake rate) for every case trained,
@@ -107,7 +112,7 @@ and averages and means are rounded to the nearest hundredth.
   and mean leave out mistakes too.
 - The Learn tab shows each case's best and average trainer time.
 - The same shortcuts work (⌘1/⌘2/⌘3, ⌘Z). Inspection is off by default; the
-  trainer has its own *Options ▾* toggle, separate from the full timer's.
+  trainer has its own ⚙ toggle, separate from the full timer's.
 
 **Stats tab**
 

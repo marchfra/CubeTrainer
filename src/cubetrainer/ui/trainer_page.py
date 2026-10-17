@@ -213,9 +213,17 @@ class TrainerPage(TimerPage):
         self.scramble_bar.scramble_changed.connect(self._reset_hints)
         # A shortcut fires before the timer sees the key press, so → never stops a
         # running solve: a hint can be asked for mid-solve.
-        self._add_shortcut(HINT_SHORTCUT, self.show_next_hint)
+        self._add_shortcut(
+            HINT_SHORTCUT,
+            self.show_next_hint,
+            "Show the case and the next move of its algorithm (also mid-solve)",
+        )
         # Likewise M marks a mistake without ending the solve.
-        self._add_shortcut(MISTAKE_SHORTCUT, self.toggle_mistake)
+        self._add_shortcut(
+            MISTAKE_SHORTCUT,
+            self.toggle_mistake,
+            "Flag the solve in progress, or else the last solve, as a mistake",
+        )
         self.timer.solve_started.connect(self._update_mistake_button)
 
         self.case_stats: CaseStatsPanel = CaseStatsPanel(
@@ -228,9 +236,9 @@ class TrainerPage(TimerPage):
         self.update_filter_button()
 
     def _fill_header(self) -> None:
-        """Add the trainer's controls around the Options button in the header.
+        """Add the trainer's controls to the header.
 
-        The row ends up as: title, filter button, (space), Mistake, Options, back.
+        The row ends up as: title, filter button, (scramble), Mistake, back.
         """
         self.title.setText(f"{self.case_set.name} trainer")
         self.back_button: QPushButton = QPushButton("← Full timer")
@@ -262,8 +270,7 @@ class TrainerPage(TimerPage):
             "Mark the solve in progress, or else the last solve, as a mistake (M)",
         )
         self.mistake_button.clicked.connect(self.toggle_mistake)
-        options_index = self.header_right.indexOf(self.options_button)
-        self.header_right.insertWidget(options_index, self.mistake_button)
+        self.header_right.addWidget(self.mistake_button)
         self.header_right.addWidget(self.back_button)
 
     def edit_filter(self) -> None:

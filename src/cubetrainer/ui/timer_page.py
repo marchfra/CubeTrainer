@@ -5,9 +5,10 @@ Solves list on the left; scramble bar and big timer on the right.
 
 import time
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QAction, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDialog,
@@ -30,16 +31,27 @@ from cubetrainer.solves import Penalty, Solve, SolveList
 from cubetrainer.sound import InspectionAudio
 from cubetrainer.ui.case_images import CaseInfo
 from cubetrainer.ui.scramble_bar import ScrambleBar
+from cubetrainer.ui.shortcuts import Shortcut, ShortcutsDialog
 from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.solves_panel import TIMER_LAYOUT, PanelLayout, SolvesPanel
 from cubetrainer.ui.time_graph import TimeGraph
-from cubetrainer.ui.timer_widget import TimerWidget
+from cubetrainer.ui.timer_widget import TIMER_KEYS, TimerWidget
+
+if TYPE_CHECKING:
+    from cubetrainer.ui.icon_buttons import CogButton
 
 #: Keyboard shortcut for each penalty on the last solve. "Ctrl" is Cmd on macOS.
 PENALTY_SHORTCUTS: dict[Penalty, str] = {
     Penalty.OK: "Ctrl+1",
     Penalty.PLUS_TWO: "Ctrl+2",
     Penalty.DNF: "Ctrl+3",
+}
+
+#: How each penalty is named in the shortcuts list.
+_PENALTY_NAMES: dict[Penalty, str] = {
+    Penalty.OK: "OK",
+    Penalty.PLUS_TWO: "+2",
+    Penalty.DNF: "DNF",
 }
 
 #: Shortcut deleting the last solve. "Ctrl" is Cmd on macOS.
@@ -112,10 +124,11 @@ class TimerPage(QWidget):
             column 2 an optional right column (see ``add_right_column``), whose
             room the timer column takes when there is none.
         header_left: Start of the header, over the solves: the title.
-        header_right: End of the header: ends with the Options button.
+        header_right: End of the header (empty on the full timer).
+        shortcut_help: Every shortcut the page registered, with what it does.
         center_column: Layout holding the timer (and the time graph).
         settings: Where the options are kept.
-        options_button: Opens ``options_menu``.
+        options_button: The cog in the timer's corner; opens ``options_menu``.
         options_menu: The inspection options.
         inspection_action: Turns inspection on or off.
         hold_action: Makes inspection start with a hold until green, like a solve.
@@ -195,7 +208,10 @@ class TimerPage(QWidget):
         self.header_left.addStretch()
         self.header_right: QHBoxLayout = QHBoxLayout()
         self.header_right.addStretch()
-        self.header_right.addWidget(self._build_options())
+        self._build_options()
+        # In the timer's corner: the header (in the trainer, its right column) has
+        # no room for another button.
+        self.timer.shortcuts_button.clicked.connect(self.show_shortcuts)
         self.center_column: QVBoxLayout = QVBoxLayout()
         self.center_column.addWidget(self.timer, stretch=1)
         self.time_graph: TimeGraph | None = None
@@ -214,9 +230,18 @@ class TimerPage(QWidget):
         self.grid.setRowStretch(3, 1)
 
         self.shortcuts: dict[str, QShortcut] = {}
+        self.shortcut_help: list[Shortcut] = []
         for penalty, keys in PENALTY_SHORTCUTS.items():
-            self._add_shortcut(keys, lambda p=penalty: self.set_last_penalty(p))
-        self._add_shortcut(DELETE_LAST_SHORTCUT, self.delete_last)
+            self._add_shortcut(
+                keys,
+                lambda p=penalty: self.set_last_penalty(p),
+                f"Mark the last solve {_PENALTY_NAMES[penalty]}",
+            )
+        self._add_shortcut(
+            DELETE_LAST_SHORTCUT,
+            self.delete_last,
+            "Delete the last solve (asks first)",
+        )
 
     def _build_left_column(self) -> None:
         """Fill the body's left column: session button, statistics, solves table."""
@@ -329,13 +354,8 @@ class TimerPage(QWidget):
             self.sessions.delete(current)
             self.switch_session(self.sessions.current())
 
-    def _build_options(self) -> QPushButton:
-        """Create the Options button and its menu, set from the saved settings.
-
-        Returns:
-            The button.
-
-        """
+    def _build_options(self) -> None:
+        """Create the options menu, set from the saved settings, on the timer's cog."""
         audio = InspectionAudio()
         self.play_warning: Callable[[int], None] = audio.play
         self.timer.inspection_warning.connect(self._on_inspection_warning)
@@ -370,18 +390,16 @@ class TimerPage(QWidget):
             action.toggled.connect(self._on_options_changed)
         self._on_options_changed()
 
-        # A plain button popping up the menu, aligned with the other buttons (see
-        # the Learn tab's set picker).
-        self.options_button: QPushButton = QPushButton("Options  ▾")
-        self.options_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.options_button.clicked.connect(
-            lambda: self.options_menu.popup(
-                self.options_button.mapToGlobal(
-                    self.options_button.rect().bottomLeft(),
-                ),
-            ),
+        # The cog in the timer's corner: the options are all about the timer.
+        self.options_button: CogButton = self.timer.options_button
+        self.options_button.clicked.connect(self._show_options)
+
+    def _show_options(self) -> None:
+        """Pop the options menu up above the cog (it sits at the bottom)."""
+        corner = self.options_button.mapToGlobal(self.options_button.rect().topLeft())
+        self.options_menu.popup(
+            corner - QPoint(0, self.options_menu.sizeHint().height()),
         )
-        return self.options_button
 
     def _key(self, name: str) -> str:
         """Return the full name of one of this page's settings.
@@ -420,18 +438,33 @@ class TimerPage(QWidget):
         if self.audio_action.isChecked():
             self.play_warning(warning_ms)
 
-    def _add_shortcut(self, keys: str, handler: Callable[[], None]) -> None:
+    def _add_shortcut(
+        self,
+        keys: str,
+        handler: Callable[[], None],
+        action: str,
+    ) -> None:
         """Register a window-wide shortcut that only works while this page is shown.
+
+        The shortcut is also recorded, with its description, for the shortcuts
+        list: registering is the only way to add one, so the list can't drift.
 
         Args:
             keys: Key sequence in portable text form, e.g. ``"Ctrl+1"``.
             handler: Function called when the shortcut fires.
+            action: What it does, for the shortcuts list.
 
         """
         shortcut = QShortcut(QKeySequence(keys), self)
         shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         shortcut.activated.connect(handler)
         self.shortcuts[keys] = shortcut
+        self.shortcut_help.append(Shortcut(keys, action))
+
+    def show_shortcuts(self) -> None:
+        """Show every keyboard shortcut: the timer's keys, then this page's."""
+        sections = [("Timer", TIMER_KEYS), (self.title.text(), self.shortcut_help)]
+        self.run_dialog(ShortcutsDialog(sections, self))
 
     def set_last_penalty(self, penalty: Penalty) -> None:
         """Set the penalty of the most recent solve (no-op without solves).
