@@ -1,13 +1,21 @@
 """Trainer mode: the timer page drilling the cases of one set."""
 
+import html
+import math
 import time
 from collections.abc import Callable
 from typing import override
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPalette, QPixmap, QShowEvent
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QFont, QFontMetricsF, QPixmap, QShowEvent
+from PySide6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QWidget,
+)
 
 from cubetrainer.cases.catalog import Case, CaseSet
 from cubetrainer.cases.filters import MemoryTrainerPrefs, Odds, TrainerPrefs
@@ -16,7 +24,7 @@ from cubetrainer.cases.trainer import (
     active_cases,
     filtered_case_scrambles,
 )
-from cubetrainer.cube.model import parse_alg, reveal_alg
+from cubetrainer.cube.model import alg_pieces, parse_alg, reveal_alg
 from cubetrainer.sessions import SessionStore
 from cubetrainer.solves import Penalty, Solve
 from cubetrainer.timing import TimerState
@@ -24,6 +32,7 @@ from cubetrainer.ui.case_images import CaseInfo, case_pixmap
 from cubetrainer.ui.case_stats_panel import CaseStatsPanel
 from cubetrainer.ui.filter_dialog import FilterDialog
 from cubetrainer.ui.solves_panel import TRAINER_LAYOUT, PanelLayout
+from cubetrainer.ui.theme import mono_font
 from cubetrainer.ui.timer_page import TimerPage
 
 #: Size of the case image in the solve dialog, in logical pixels.
@@ -32,31 +41,41 @@ DIALOG_IMAGE_SIZE: int = 160
 #: Size of the case image in the hint panel, in logical pixels.
 HINT_IMAGE_SIZE: int = 120
 
+#: Qt's "no maximum" widget width (QWIDGETSIZE_MAX, not exported by PySide).
+_NO_MAX_WIDTH: int = 16_777_215
+
+#: Width of the hint card (fixed, so it never jumps as moves are revealed).
+HINT_CARD_WIDTH: int = 500
+
 #: Shortcut revealing the next hint step.
 HINT_SHORTCUT: str = "Right"
 
 #: Shortcut marking the current (or last) solve as a mistake.
 MISTAKE_SHORTCUT: str = "M"
 
-#: Background of the Mistake button while the solve it acts on is flagged.
-MISTAKE_COLOR: str = "#e5484d"
-
 #: Shown in the hint panel before any hint is revealed.
 HINT_PROMPT: str = "Press → for a hint"
 
 
 class HintPanel(QWidget):
-    """Shows the case image and the first few moves of its algorithm.
+    """A fixed-size card with the case image and its algorithm, revealed move by move.
+
+    The card never changes size: before the first hint it holds the prompt; after,
+    the image and the whole algorithm, with the moves not revealed yet masked by
+    faint dots of the same width (the font is fixed-width). Revealing a move swaps
+    its dots for the move in place, so nothing shifts or re-wraps.
 
     Attributes:
+        card: The card.
         image: The case image (hidden until the first hint).
-        moves: The revealed moves, or a prompt before the first hint.
-        remaining: One faint dot per move still hidden.
+        moves: The prompt, or the algorithm with its hidden moves masked.
+        shown_text: The revealed part of the algorithm ("" before the first hint).
+        hidden_moves: How many moves are still masked.
 
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        """Create an empty panel showing the prompt.
+        """Create the card showing the prompt.
 
         Args:
             parent: Optional parent widget.
@@ -66,41 +85,47 @@ class HintPanel(QWidget):
         self.image: QLabel = QLabel()
         self.image.setFixedSize(HINT_IMAGE_SIZE, HINT_IMAGE_SIZE)
         self.moves: QLabel = QLabel()
-        font = QFont()
-        font.setPointSize(22)
-        self.moves.setFont(font)
-        self.moves.setWordWrap(True)
-        self.remaining: QLabel = QLabel()
-        small = QFont()
-        small.setPointSize(12)
-        self.remaining.setFont(small)
-        # Faint, and following light/dark mode: the hidden moves shouldn't compete
-        # with the revealed ones.
-        self.remaining.setForegroundRole(QPalette.ColorRole.PlaceholderText)
-        # The panel keeps the image's height, so the timer below doesn't move when
-        # the first hint appears.
-        self.setMinimumHeight(HINT_IMAGE_SIZE)
+        self.moves.setFont(mono_font(19, QFont.Weight.Medium))
+        self.moves.setTextFormat(Qt.TextFormat.RichText)  # lines wrapped in _render
+        self.shown_text: str = ""
+        self.hidden_moves: int = 0
+        self._pieces: list[tuple[str, bool]] = []
+        self.card: QWidget = QWidget()
+        self.card.setObjectName("card")
+        self.card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self.card.setFixedSize(HINT_CARD_WIDTH, HINT_IMAGE_SIZE + 20)
+        self._inner: QHBoxLayout = QHBoxLayout(self.card)
+        self._inner.setContentsMargins(10, 10, 20, 10)
+        self._inner.setSpacing(16)
+        # Image and text as one block, centred in the card.
+        self._inner.addStretch()
+        self._inner.addWidget(self.image)
+        self._inner.addWidget(self.moves)
+        self._inner.addStretch()
         box = QHBoxLayout(self)
         box.setContentsMargins(0, 0, 0, 0)
         box.addStretch()
-        box.addWidget(self.image)
-        box.addWidget(self.moves)
-        box.addWidget(self.remaining)
+        box.addWidget(self.card)
         box.addStretch()
         self.clear()
 
     def clear(self) -> None:
-        """Hide the hint, showing only the prompt (centred, as nothing is beside it)."""
+        """Show only the prompt, centred in the card."""
         self.image.clear()
         self.image.hide()
-        self.remaining.hide()
-        self.moves.setText(HINT_PROMPT)
+        self._pieces = []
+        self.shown_text = ""
+        self.hidden_moves = 0
+        self.moves.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.moves.setMinimumWidth(0)
+        self.moves.setMaximumWidth(_NO_MAX_WIDTH)
+        self.moves.setText(html.escape(HINT_PROMPT))
 
     def show_hint(self, image: QPixmap, alg: str, revealed: int) -> None:
-        """Show the case image and the first ``revealed`` moves of its algorithm.
+        """Show the case image and the algorithm with its first moves revealed.
 
         Brackets in the algorithm are kept but aren't moves: ``"(R U R' U') F"`` with
-        one move revealed shows ``"(R"``.
+        one move revealed shows ``"(R"`` and masks the rest.
 
         Args:
             image: The case image.
@@ -110,10 +135,155 @@ class HintPanel(QWidget):
         """
         self.image.setPixmap(image)
         self.image.show()
-        hidden = len(parse_alg(alg)) - revealed
-        self.moves.setText(reveal_alg(alg, revealed))
-        self.remaining.setText("  ".join("•" * hidden))
-        self.remaining.setVisible(hidden > 0)
+        self._pieces = alg_pieces(alg, revealed)
+        self.shown_text = reveal_alg(alg, revealed)
+        self.hidden_moves = max(len(parse_alg(alg)) - revealed, 0)
+        self.moves.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        )
+        self._render()
+
+    def line_length(self) -> int:
+        """Return how many characters fit on one line of the algorithm.
+
+        Returns:
+            The count (the font is fixed-width).
+
+        """
+        margins = self._inner.contentsMargins()
+        spacing = self._inner.spacing()
+        width = (
+            HINT_CARD_WIDTH
+            - HINT_IMAGE_SIZE
+            - margins.left()
+            - margins.right()
+            - spacing
+        )
+        advance = QFontMetricsF(self.moves.font()).horizontalAdvance("M")
+        return max(int((width - 4) // advance), 1)
+
+    def _render(self) -> None:
+        """Write the algorithm, masking hidden pieces with dots in the faint colour.
+
+        The lines are wrapped here (``wrap_pieces``: between bracket groups), from
+        the whole algorithm, so they're the same whether pieces are shown or masked;
+        the text is exactly as wide as its longest line, so image and text stay
+        centred together and never move as moves are revealed.
+        """
+        faint = self.palette().placeholderText().color().name()
+        lines = wrap_pieces(self._pieces, self.line_length())
+        rows = []
+        for line in lines:
+            parts = []
+            for piece, shown in line:
+                text = (
+                    piece if shown else "".join(" " if c == " " else "·" for c in piece)
+                )
+                text = html.escape(text).replace(" ", "&nbsp;")  # lines are ours
+                parts.append(
+                    text if shown else f'<span style="color: {faint}">{text}</span>',
+                )
+            rows.append("".join(parts))
+        # Measured line by line in fractional pixels: rounding one character's width
+        # and multiplying it cuts off the end of long lines.
+        metrics = QFontMetricsF(self.moves.font())
+        widest = max(
+            (metrics.horizontalAdvance("".join(p for p, _ in line)) for line in lines),
+            default=0.0,
+        )
+        self.moves.setFixedWidth(math.ceil(widest) + 4)
+        self.moves.setText("<br>".join(rows))
+
+    @override
+    def changeEvent(self, event: QEvent) -> None:
+        """Repaint the dots in the new faint colour when light/dark mode changes.
+
+        Args:
+            event: The change event.
+
+        """
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange and self._pieces:
+            self._render()
+
+
+def breakable_spaces(pieces: list[tuple[str, bool]], line_length: int) -> list[bool]:
+    """Decide which pieces' leading spaces may end a line.
+
+    Spaces between moves of the same bracket group are kept together, unless the
+    group is too long for one line (then it may break anywhere, like plain moves).
+
+    Args:
+        pieces: The algorithm's display pieces (see ``alg_pieces``).
+        line_length: Characters that fit on one line.
+
+    Returns:
+        One flag per piece: whether the space before it may break the line.
+
+    """
+    breakable = [True] * len(pieces)
+    depth = 0
+    group: list[int] = []  # pieces of the group being read
+    for index, (piece, _) in enumerate(pieces):
+        symbol = piece.strip()
+        if symbol in {"(", "["}:
+            depth += 1
+            if depth == 1:
+                group = [index]
+            continue
+        if depth > 0:
+            group.append(index)
+            if symbol in {")", "]"}:
+                depth -= 1
+            if depth == 0:
+                length = sum(len(pieces[i][0]) for i in group) - (
+                    len(pieces[group[0]][0]) - len(pieces[group[0]][0].lstrip(" "))
+                )
+                if length <= line_length:
+                    for i in group[1:]:
+                        breakable[i] = False
+    return breakable
+
+
+def wrap_pieces(
+    pieces: list[tuple[str, bool]],
+    line_length: int,
+) -> list[list[tuple[str, bool]]]:
+    """Wrap an algorithm's display pieces into lines, breaking between groups.
+
+    A line may only end where ``breakable_spaces`` allows; the space that ends a
+    line is dropped from the next line's first piece.
+
+    Args:
+        pieces: The algorithm's display pieces (see ``alg_pieces``).
+        line_length: Characters that fit on one line.
+
+    Returns:
+        The lines, each a list of pieces.
+
+    """
+    words: list[list[tuple[str, bool]]] = []
+    for piece, breakable in zip(
+        pieces,
+        breakable_spaces(pieces, line_length),
+        strict=True,
+    ):
+        if breakable or not words:
+            words.append([])
+        words[-1].append(piece)
+    lines: list[list[tuple[str, bool]]] = []
+    length = 0
+    for word in words:
+        size = sum(len(text) for text, _ in word)
+        if lines and length + size <= line_length:
+            lines[-1].extend(word)
+            length += size
+            continue
+        first, shown = word[0]
+        start = [(first.lstrip(" "), shown), *word[1:]]
+        lines.append(start)
+        length = sum(len(text) for text, _ in start)
+    return lines
 
 
 def filter_text(count: int, odds: Odds, *, fell_back: bool) -> str:
@@ -125,14 +295,14 @@ def filter_text(count: int, odds: Odds, *, fell_back: bool) -> str:
         fell_back: Whether no case matched, so every case is used.
 
     Returns:
-        e.g. ``"12 cases · slowest  ▾"``, or ``"⚠ all 21 · equal  ▾"`` when no case
+        e.g. ``"12 cases · slowest"``, or ``"⚠ all 21 · equal"`` when no case
         matched (the tooltip explains).
 
     """
     if fell_back:
-        return f"⚠ all {count} · {odds.short}  ▾"
+        return f"⚠ all {count} · {odds.short}"
     noun = "case" if count == 1 else "cases"
-    return f"{count} {noun} · {odds.short}  ▾"
+    return f"{count} {noun} · {odds.short}"
 
 
 class TrainerPage(TimerPage):
@@ -247,24 +417,13 @@ class TrainerPage(TimerPage):
         self.filter_button: QPushButton = QPushButton()
         self.filter_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.filter_button.setToolTip("Choose which cases to train")
+        self.filter_button.setProperty("pill", True)  # noqa: FBT003 - rounder, like a tag
         self.filter_button.clicked.connect(self.edit_filter)
         self.header_left.insertWidget(1, self.filter_button)
         self.mistake_button: QPushButton = QPushButton("Mistake")
         self.mistake_button.setCheckable(True)
+        # Red tint, solid red while checked: see the theme's style sheet.
         self.mistake_button.setObjectName("mistakeButton")
-        # Only the checked state is styled, so the unchecked button stays native; the
-        # margins match where macOS draws the native bezel inside the button, so the
-        # two states are the same size. Scoped by object name so the tooltip keeps
-        # its default look.
-        self.mistake_button.setStyleSheet(
-            f"#mistakeButton:checked {{ background-color: {MISTAKE_COLOR};"
-            " color: white; border-radius: 5px; margin: 4px 0px 5px 0px; }",
-        )
-        # The checked rule has no padding, so its size hint is smaller than the native
-        # button's; if the page is laid out while checked (the last solve was a
-        # mistake) the layout would squeeze the button, and once unchecked the native
-        # bezel no longer fits. Keep at least the native size (it starts unchecked).
-        self.mistake_button.setMinimumSize(self.mistake_button.sizeHint())
         self.mistake_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.mistake_button.setToolTip(
             "Mark the solve in progress, or else the last solve, as a mistake (M)",
@@ -304,7 +463,7 @@ class TrainerPage(TimerPage):
         return sorted(solves, key=lambda solve: solve.created_at)
 
     def update_filter_button(self) -> None:
-        """Describe the current filter on its button, e.g. ``"12 cases · equal ▾"``."""
+        """Describe the current filter on its button, e.g. ``"12 cases · equal"``."""
         cases, fell_back = active_cases(self.case_set, self.prefs)
         odds = self.prefs.load_filter().odds
         self.filter_button.setText(filter_text(len(cases), odds, fell_back=fell_back))

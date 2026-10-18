@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QComboBox
 from pytestqt.qtbot import QtBot
 
 from cubetrainer.db import TIMER_KIND, Database, DbSessionStore, trainer_session_kind
@@ -64,9 +64,9 @@ def test_shows_the_timers_current_session(qtbot: QtBot) -> None:
     add(db, store.current(), 10_000, 12_000, 14_000)
     page = make_page(qtbot, db)
 
-    assert page.source_button.text() == "Full timer  ▾"
-    assert page.session_button.text() == "Session 1  ▾"
-    assert not page.case_button.isVisible()
+    assert page.source_picker.currentText() == "Full timer"
+    assert page.session_picker.currentText() == "Session 1"
+    assert not page.case_picker.isVisible()
     assert page.overview["solves"].text() == "3"
     assert page.overview["mean"].text() == "12.00"
     assert page.overview["best"].text() == "10.00"
@@ -84,7 +84,7 @@ def test_all_sessions_combine_in_time_order(qtbot: QtBot) -> None:
 
     page.select_session(None)
 
-    assert page.session_button.text() == "All  ▾"
+    assert page.session_picker.currentText() == "All"
     assert page.overview["solves"].text() == "5"
     assert page.averages[5, "current"].text() == "24.00"  # 11, 30, 31 after trimming
 
@@ -100,13 +100,13 @@ def test_trainer_source_filters_cases_and_mistakes(qtbot: QtBot) -> None:
     pll = next(s for s in all_sources() if s.set_id == "pll")
 
     page.select_source(pll)
-    assert page.case_button.isVisible()
-    assert page.case_button.text() == "All  ▾"
+    assert page.case_picker.isVisible()
+    assert page.case_picker.currentText() == "All"
     assert page.overview["solves"].text() == "3"  # the mistake is left out
     assert page.overview["best"].text() == "2.00"
 
     page.select_case("T")
-    assert page.case_button.text() == "T  ▾"
+    assert page.case_picker.currentText() == "T"
     assert page.overview["mean"].text() == "2.50"
 
 
@@ -137,19 +137,36 @@ def test_menus_list_sources_sessions_and_cases(qtbot: QtBot) -> None:
     db = Database(":memory:")
     page = make_page(qtbot, db)
 
-    assert [a.text() for a in page._source_menu.actions()] == [
-        s.label for s in all_sources()
-    ]
-    page._session_menu.aboutToShow.emit()
-    assert [a.text() for a in page._session_menu.actions()] == ["All", "Session 1"]
+    def items(picker: QComboBox) -> list[str]:
+        return [picker.itemText(i) for i in range(picker.count())]
+
+    assert items(page.source_picker) == [s.label for s in all_sources()]
+    assert items(page.session_picker) == ["All", "Session 1"]
 
     page.select_source(next(s for s in all_sources() if s.set_id == "pll2"))
-    page._case_menu.aboutToShow.emit()
-    names = [a.text() for a in page._case_menu.actions()]
-    assert names[:3] == ["All", "Headlights", "Diagonal"]
-    qtbot.mouseClick(page.case_button, Qt.MouseButton.LeftButton)
-    qtbot.waitUntil(page._case_menu.isVisible)
-    page._case_menu.hide()
+    assert items(page.case_picker)[:3] == ["All", "Headlights", "Diagonal"]
+
+
+def test_choosing_in_the_pickers_selects(qtbot: QtBot) -> None:
+    """Choosing a source, session or case in a picker shows it."""
+    db = Database(":memory:")
+    session = DbSessionStore(db, trainer_session_kind("pll")).current()
+    add(db, session, 2_000, 3_000, case_id="T")
+    add(db, session, 5_000, case_id="Ua")
+    page = make_page(qtbot, db)
+    index = next(i for i, s in enumerate(all_sources()) if s.set_id == "pll")
+
+    page.source_picker.activated.emit(index)
+    assert page.source.set_id == "pll"
+    assert page.overview["solves"].text() == "3"
+
+    page.case_picker.activated.emit(page.case_picker.findData("T"))
+    assert page.case_id == "T"
+    assert page.overview["solves"].text() == "2"
+
+    page.session_picker.activated.emit(page.session_picker.findData(""))
+    assert page.session_id is None
+    assert page.case_picker.currentText() == "T"  # the case stays chosen
 
 
 def test_refreshes_when_shown(qtbot: QtBot) -> None:

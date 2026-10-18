@@ -58,22 +58,25 @@ class GraphColors:
     baseline: str
 
 
+# The Calm theme's colours: the first series is its violet accent, then amber and
+# teal; validated (lightness, chroma, colour-blind separation, contrast) against
+# its backgrounds, #f3f4f7 light and #0e1014 dark. Neutrals are its greys.
 LIGHT: GraphColors = GraphColors(
-    surface="#ececec",
-    series=("#2a78d6", "#eb6834", "#1baf7a"),
-    text="#52514e",
-    muted="#898781",
-    grid="#d6d5ce",
-    baseline="#c3c2b7",
+    surface="#f3f4f7",
+    series=("#6b5cf0", "#d97a2b", "#0f9d8f"),
+    text="#3d4250",
+    muted="#6a7184",
+    grid="#e2e5eb",
+    baseline="#cfd3dc",
 )
 
 DARK: GraphColors = GraphColors(
-    surface="#323232",
-    series=("#3987e5", "#d95926", "#199e70"),
-    text="#c3c2b7",
-    muted="#898781",
-    grid="#3e3e3b",
-    baseline="#4a4a46",
+    surface="#0e1014",
+    series=("#8c7dff", "#c8753a", "#22a493"),
+    text="#c3c7d0",
+    muted="#8b92a3",
+    grid="#1e222b",
+    baseline="#343a48",
 )
 
 #: Names of the three lines, in slot order.

@@ -60,16 +60,15 @@ def test_copy_puts_scramble_on_clipboard(qtbot: QtBot, page: TimerPage) -> None:
     qtbot.mouseClick(page.scramble_bar.copy_button, Qt.MouseButton.LeftButton)
 
     assert QGuiApplication.clipboard().text() == "s0"
-    assert page.scramble_bar.copy_button.text() == "Copied ✓"
+    assert page.scramble_bar.copy_button.copied  # shows a tick
+    qtbot.waitUntil(lambda: not page.scramble_bar.copy_button.copied, timeout=3000)
 
 
-def test_copy_button_width_is_fixed(page: TimerPage) -> None:
-    """The copy button has a fixed width that fits the "Copied ✓" label."""
-    button = page.scramble_bar.copy_button
-
-    assert button.minimumWidth() == button.maximumWidth()
-    button.setText("Copied ✓")
-    assert button.sizeHint().width() <= button.width()
+def test_scramble_buttons_are_fixed_size_icons(page: TimerPage) -> None:
+    """Previous, next and copy are small fixed-size icons, whatever they show."""
+    bar = page.scramble_bar
+    for button in (bar.prev_button, bar.next_button, bar.copy_button):
+        assert button.minimumSize() == button.maximumSize()
 
 
 def test_reserve_width_fits_longest_label(qtbot: QtBot) -> None:

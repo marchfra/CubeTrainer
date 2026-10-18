@@ -6,6 +6,22 @@ Built with Python and PySide6.
 
 ## Features
 
+**Look**
+
+- The *Calm* theme: soft rounded panels on a near-black background in dark mode
+  (light grey in light mode), one violet accent for highlights like best times.
+  It follows the system's light/dark mode, switching live.
+- Fonts: Geist for the interface and the times (with fixed-width digits),
+  Geist Mono for scrambles and moves. Both are bundled with the app (SIL Open Font
+  License, in `src/cubetrainer/ui/fonts/`).
+- Every control is themed: buttons, tabs, tables, menus, checkboxes, radio
+  buttons, number fields. Destructive buttons (e.g. *Delete* in the solve dialog)
+  are red and never the default, so Return never deletes.
+- Charts use the theme's colours: the violet accent, amber and teal, checked for
+  readability and colour-blind separation against both backgrounds.
+- Themes are small sets of named colours and fonts (`ui/theme.py`); the style
+  sheet is generated from them, so another theme can be added later.
+
 **Timer tab** (full solves)
 
 - Spacebar timer: hold until the display turns green (0.3 s), release to start, press
@@ -14,15 +30,17 @@ Built with Python and PySide6.
   countdown (or, with *Hold space to start inspection*, a hold until green does);
   starting after 15 s is +2, after 17 s DNF. Optional beeps at 8 s (one) and 12 s
   (two), like a judge's calls. Esc cancels inspection.
-- WCA-style random-state scrambles (two-phase solver) with ◀ previous / ▶ next / Copy.
+- WCA-style random-state scrambles (two-phase solver), with small icon buttons
+  beside them: ‹ previous, › next and copy (a tick confirms the copy). Being
+  icons, they leave the scramble room to stay on one line.
 - Solves table (newest first) with rolling ao5 and ao12, plus a summary of current and
   best single / ao5 / ao12, solve count and session mean.
 - Click a solve to see its details, change its penalty or delete it.
 - **Time graph** under the timer: singles, ao5 and ao12 over the session (DNFs are
   gaps). Hover for a crosshair and the values at that solve. Follows the system's
   light/dark mode.
-- **Sessions**, cstimer-style (the *Session ▾* button above the list): switch
-  between sessions, or create, rename or delete one (deleting asks first and
+- **Sessions**, cstimer-style: the session picker above the list switches
+  between sessions, and the ⋯ button beside it creates, renames or deletes one (deleting asks first and
   takes its solves with it; the last session can't be deleted). Statistics are
   per session, and the current session is remembered.
 - Solves are saved automatically and survive restarts.
@@ -76,7 +94,7 @@ and averages and means are rounded to the nearest hundredth.
   look of 2-look OLL with random corners, the corner look of 2-look PLL with random
   edges. Scrambles are random-state style, so they don't
   give away the algorithm.
-- **Case filter** (the *N cases · equal ▾* button): choose groups and learning
+- **Case filter** (the *N cases · equal* button): choose groups and learning
   statuses (a case must match both), and how likely each case is:
   - *Equal*: every case equally often.
   - *Realistic*: as often as in real solves. In PLL, H/Na/Nb are 1/72, E/Z 1/36
@@ -95,15 +113,17 @@ and averages and means are rounded to the nearest hundredth.
 - The solves table has a case column, and the solve dialog shows the case's name
   and image. The case is recognised from the scramble itself.
 - Trainer solves are kept apart from full solves: each set's trainer has its own
-  sessions, with the same *Session ▾* menu. The Learn tab's best/avg come from the
+  sessions, with the same session picker and ⋯ menu. The Learn tab's best/avg come from the
   set's current trainer session.
 - **Hints:** press → to show the case image and the first move of its algorithm;
   each further → reveals one more move. The moves start from the case as the image
   shows it, so turn the U layer to match the image first. Brackets that group an
   algorithm into blocks, like `(R U R' U')`, are shown but don't count as steps. →
-  works before and during a solve and never stops the timer. Faint dots after
-  the moves show how many are still hidden. The number of hint steps used is
-  saved with the solve.
+  works before and during a solve and never stops the timer. The hint card keeps
+  one size: it shows the whole algorithm with the moves not revealed yet masked
+  by faint dots of the same width, so revealing a move never shifts or re-wraps
+  the text. Lines break between bracket groups, never inside one (unless a group
+  is longer than a line). The number of hint steps used is saved with the solve.
 - **Mistakes:** press M (or click *Mistake*, red while flagged) if you messed up. During a solve it
   flags that solve without stopping the timer; otherwise it toggles the flag of the
   last solve. The solve dialog has a *Mistake* checkbox too.
@@ -218,4 +238,5 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The bundled Geist and Geist Mono fonts are © Vercel, under the
+[SIL Open Font License](src/cubetrainer/ui/fonts/OFL.txt).

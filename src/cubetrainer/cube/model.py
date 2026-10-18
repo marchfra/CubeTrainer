@@ -358,6 +358,50 @@ def reveal_alg(text: str, moves: int) -> str:
     return _join_tokens(shown)
 
 
+def alg_pieces(text: str, moves: int) -> list[tuple[str, bool]]:
+    """Split an algorithm for display into pieces, each shown or still hidden.
+
+    The pieces joined give the whole algorithm as ``reveal_alg`` writes it (spaces
+    included), whatever ``moves`` is, so a display that masks the hidden pieces
+    keeps the same length as more moves are shown. A piece is shown when
+    ``reveal_alg(text, moves)`` includes it.
+
+    Args:
+        text: A valid algorithm, possibly with ``(...)`` or ``[...]`` groups.
+        moves: How many moves are shown.
+
+    Returns:
+        (text, shown) pairs; the text of each piece starts with the space before it.
+
+    """
+    tokens = _display_tokens(text)
+    shown: list[bool] = []
+    pending: list[int] = []  # opening brackets waiting for their first move
+    count = 0
+    for token in tokens:
+        if token in _OPENING:
+            pending.append(len(shown))
+            shown.append(False)
+        elif token in _CLOSING:
+            shown.append(count <= moves and count > 0)
+        else:
+            count += 1
+            visible = count <= moves
+            if visible:
+                for index in pending:
+                    shown[index] = True
+            pending.clear()
+            shown.append(visible)
+    pieces: list[tuple[str, bool]] = []
+    text_so_far = ""
+    for token, visible in zip(tokens, shown, strict=True):
+        tight = token in _CLOSING or (text_so_far and text_so_far[-1] in _OPENING)
+        piece = token if tight or not text_so_far else f" {token}"
+        text_so_far += piece
+        pieces.append((piece, visible))
+    return pieces
+
+
 def invert_alg(moves: Sequence[Move]) -> list[Move]:
     """Return the algorithm that undoes ``moves``.
 

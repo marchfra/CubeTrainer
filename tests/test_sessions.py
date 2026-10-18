@@ -120,32 +120,30 @@ def page(qtbot: QtBot, clock: FakeClock) -> TimerPage:
     return widget
 
 
-def menu_texts(page: TimerPage) -> list[str]:
-    """Return the session menu's entries, after it fills itself.
+def picker_names(page: TimerPage) -> list[str]:
+    """Return the session names listed in the page's session picker.
 
     Args:
         page: The page.
 
     Returns:
-        The action texts (separators are empty strings).
+        The names, in order.
 
     """
-    page.session_menu.aboutToShow.emit()
-    return [action.text() for action in page.session_menu.actions()]
+    picker = page.session_picker
+    return [picker.itemText(i) for i in range(picker.count())]
 
 
-def test_menu_lists_sessions_and_actions(page: TimerPage) -> None:
-    """The menu shows the sessions, then New / Rename / Delete (off for one session)."""
-    assert page.session_button.text() == "Session 1  ▾"
-    assert menu_texts(page) == [
-        "Session 1",
-        "",
+def test_picker_and_actions(page: TimerPage) -> None:
+    """The picker lists the sessions; the more menu has New / Rename / Delete."""
+    assert page.session_picker.currentText() == "Session 1"
+    assert picker_names(page) == ["Session 1"]
+    assert [a.text() for a in page.session_menu.actions()] == [
         "New session…",
         "Rename session…",
         "Delete session…",
     ]
-    delete = page.session_menu.actions()[-1]
-    assert not delete.isEnabled()
+    assert not page.delete_session_action.isEnabled()  # the only session
 
 
 def test_new_session_switches_to_an_empty_list(
@@ -165,7 +163,8 @@ def test_new_session_switches_to_an_empty_list(
     page.new_session()
 
     assert asked == [("Name of the new session:", "Session 2")]
-    assert page.session_button.text() == "Practice  ▾"
+    assert page.session_picker.currentText() == "Practice"
+    assert page.delete_session_action.isEnabled()
     assert page.solves_panel.model.rowCount() == 0
     do_solve(qtbot, page, clock, 2_000)
 
@@ -190,8 +189,8 @@ def test_rename_session(page: TimerPage) -> None:
 
     page.rename_session()
 
-    assert page.session_button.text() == "Warm-up  ▾"
-    assert menu_texts(page)[0] == "Warm-up"
+    assert page.session_picker.currentText() == "Warm-up"
+    assert picker_names(page) == ["Warm-up"]
 
 
 @pytest.mark.parametrize("answer", [True, False])
@@ -211,19 +210,19 @@ def test_delete_session_asks_first(page: TimerPage, *, answer: bool) -> None:
     assert questions == ["Delete the session 'Doomed' and its 0 solves?"]
     names = [s.name for s in page.sessions.sessions()]
     assert names == (["Session 1"] if answer else ["Session 1", "Doomed"])
-    assert page.session_button.text() == ("Session 1  ▾" if answer else "Doomed  ▾")
+    assert page.session_picker.currentText() == ("Session 1" if answer else "Doomed")
 
 
-def test_switching_from_the_menu(qtbot: QtBot, page: TimerPage) -> None:
-    """Choosing a session in the menu switches to it."""
+def test_switching_from_the_picker(qtbot: QtBot, page: TimerPage) -> None:
+    """Choosing a session in the picker switches to it; the more button pops up."""
     page.ask_text = lambda _label, _text: "Other"
     page.new_session()
 
-    menu_texts(page)
-    page.session_menu.actions()[0].trigger()
+    page.session_picker.activated.emit(0)
 
-    assert page.session_button.text() == "Session 1  ▾"
-    qtbot.mouseClick(page.session_button, Qt.MouseButton.LeftButton)
+    assert page.sessions.current() == page.sessions.sessions()[0].id
+    assert page.session_picker.currentText() == "Session 1"
+    qtbot.mouseClick(page.session_actions_button, Qt.MouseButton.LeftButton)
     qtbot.waitUntil(page.session_menu.isVisible)
     page.session_menu.hide()
 

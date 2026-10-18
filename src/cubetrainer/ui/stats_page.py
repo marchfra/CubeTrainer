@@ -11,14 +11,13 @@ from typing import override
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QShowEvent
 from PySide6.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
     QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QMenu,
-    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -30,10 +29,10 @@ from cubetrainer.db import TIMER_KIND, Database, DbSessionStore, trainer_session
 from cubetrainer.formatting import format_average, format_percent, format_value
 from cubetrainer.solves import Solve
 from cubetrainer.ui.distribution_plots import HistogramPlot
+from cubetrainer.ui.dropdown import Dropdown
 from cubetrainer.ui.learn_page import AVAILABLE_SETS
 from cubetrainer.ui.learning_plots import CaseCharts, LearningCurvePlot
 from cubetrainer.ui.record_plots import RecordsPlot
-from cubetrainer.ui.sizing import reserve_width
 
 #: Shown for an option that covers everything (sessions or cases).
 ALL: str = "All"
@@ -112,24 +111,48 @@ def load_solves(
     return solves
 
 
-def _picker(tooltip: str) -> tuple[QPushButton, QMenu]:
-    """Create a button that pops up a menu, like the Learn tab's set picker.
+#: Item data meaning "all sessions" or "all cases" in a picker.
+_ALL_DATA: str = ""
+
+#: Characters a session or case picker is sized for (its items change, its width
+#: doesn't).
+_PICKER_CHARACTERS: int = 18
+
+#: Characters the case picker is sized for (case names are short).
+_CASE_CHARACTERS: int = 10
+
+
+def _picker(tooltip: str) -> QComboBox:
+    """Create a combo box that never takes keyboard focus (space times solves).
 
     Args:
         tooltip: Hover help text.
 
     Returns:
-        The button and its (empty) menu.
+        The (empty) combo box.
 
     """
-    button = QPushButton()
-    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    button.setToolTip(tooltip)
-    menu = QMenu(button)
-    button.clicked.connect(
-        lambda: menu.popup(button.mapToGlobal(button.rect().bottomLeft())),
-    )
-    return button, menu
+    picker = Dropdown()
+    picker.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    picker.setToolTip(tooltip)
+    return picker
+
+
+def _refill(picker: QComboBox, items: list[tuple[str, str]], current: str) -> None:
+    """Replace a picker's items and select one, without signalling a choice.
+
+    Args:
+        picker: The combo box.
+        items: (text, data) for each item.
+        current: Data of the item to select.
+
+    """
+    picker.blockSignals(True)  # noqa: FBT003 - Qt's positional flag
+    picker.clear()
+    for text, data in items:
+        picker.addItem(text, data)
+    picker.setCurrentIndex(max(picker.findData(current), 0))
+    picker.blockSignals(False)  # noqa: FBT003 - Qt's positional flag
 
 
 def _value_label() -> QLabel:
@@ -154,9 +177,9 @@ class StatsPage(QWidget):
         source: The selected source.
         session_id: The selected session, or None for all sessions.
         case_id: The selected case (trainers only), or None for all cases.
-        source_button: Chooses the source.
-        session_button: Chooses the session.
-        case_button: Chooses the case (hidden for the full timer).
+        source_picker: Chooses the source.
+        session_picker: Chooses the session, or all.
+        case_picker: Chooses the case, or all (hidden for the full timer).
         sub_x: The limit for the sub-X rate, in seconds.
         overview: Value labels of the overview, keyed by row name.
         averages: Value labels of the averages, keyed by ``(n, "current" | "best")``.
@@ -186,17 +209,32 @@ class StatsPage(QWidget):
         self._shown: tuple[object, ...] | None = None
         self._values: list[float] = []
 
-        self.source_button, self._source_menu = _picker("Full timer or a trainer")
+        # Only the user's choices (``activated``) load anything: refilling the
+        # pickers in code doesn't.
+        self.source_picker: QComboBox = _picker("Full timer or a trainer")
         for source in self._sources:
-            self._source_menu.addAction(
-                source.label,
-                lambda s=source: self.select_source(s),
+            self.source_picker.addItem(source.label)
+        self.source_picker.activated.connect(
+            lambda index: self.select_source(self._sources[index]),
+        )
+        self.session_picker: QComboBox = _picker("One session or all")
+        self.case_picker: QComboBox = _picker("One case or all")
+        for picker, characters in (
+            (self.session_picker, _PICKER_CHARACTERS),
+            (self.case_picker, _CASE_CHARACTERS),
+        ):
+            picker.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon,
             )
-        reserve_width(self.source_button, *(f"{s.label}  ▾" for s in self._sources))
-        self.session_button, self._session_menu = _picker("One session or all")
-        self._session_menu.aboutToShow.connect(self._fill_session_menu)
-        self.case_button, self._case_menu = _picker("One case or all")
-        self._case_menu.aboutToShow.connect(self._fill_case_menu)
+            picker.setMinimumContentsLength(characters)
+        self.session_picker.activated.connect(
+            lambda index: self.select_session(
+                int(data) if (data := self.session_picker.itemData(index)) else None,
+            ),
+        )
+        self.case_picker.activated.connect(
+            lambda index: self.select_case(self.case_picker.itemData(index) or None),
+        )
 
         self.sub_x: QDoubleSpinBox = QDoubleSpinBox()
         self.sub_x.setRange(0.5, 600)
@@ -207,15 +245,15 @@ class StatsPage(QWidget):
         self.sub_x.valueChanged.connect(self._update_sub_x)
 
         top = QHBoxLayout()
-        for text, button in (
-            ("Source:", self.source_button),
-            ("Session:", self.session_button),
-            ("Case:", self.case_button),
+        for text, picker in (
+            ("Source:", self.source_picker),
+            ("Session:", self.session_picker),
+            ("Case:", self.case_picker),
         ):
             label = QLabel(text)
             top.addWidget(label)
-            top.addWidget(button)
-            if button is self.case_button:
+            top.addWidget(picker)
+            if picker is self.case_picker:
                 self._case_label = label
         top.addStretch()
 
@@ -426,28 +464,6 @@ class StatsPage(QWidget):
         self.case_id = case_id
         self.refresh()
 
-    def _fill_session_menu(self) -> None:
-        """List the source's sessions, plus "All"."""
-        self._session_menu.clear()
-        self._session_menu.addAction(ALL, lambda: self.select_session(None))
-        for session in DbSessionStore(self._db, self.source.kind).sessions():
-            self._session_menu.addAction(
-                session.name,
-                lambda sid=session.id: self.select_session(sid),
-            )
-
-    def _fill_case_menu(self) -> None:
-        """List the trainer's cases, plus "All"."""
-        self._case_menu.clear()
-        self._case_menu.addAction(ALL, lambda: self.select_case(None))
-        if self.source.set_id is None:
-            return
-        for case in load_case_set(self.source.set_id).cases:
-            self._case_menu.addAction(
-                case.name,
-                lambda cid=case.id: self.select_case(cid),
-            )
-
     def refresh(self) -> None:
         """Reload the selected solves and show their statistics.
 
@@ -521,18 +537,24 @@ class StatsPage(QWidget):
             )
 
     def _update_pickers(self) -> None:
-        """Show the current selection on the picker buttons."""
-        self.source_button.setText(f"{self.source.label}  ▾")
+        """Fill the pickers for the source and show the current selection."""
+        self.source_picker.setCurrentIndex(self._sources.index(self.source))
         sessions = DbSessionStore(self._db, self.source.kind).sessions()
-        name = next((s.name for s in sessions if s.id == self.session_id), ALL)
-        self.session_button.setText(f"{name}  ▾")
+        _refill(
+            self.session_picker,
+            [(ALL, _ALL_DATA), *((s.name, str(s.id)) for s in sessions)],
+            _ALL_DATA if self.session_id is None else str(self.session_id),
+        )
         trainer = self.source.set_id is not None
-        self.case_button.setVisible(trainer)
+        self.case_picker.setVisible(trainer)
         self._case_label.setVisible(trainer)
         if trainer and self.source.set_id is not None:
             cases = load_case_set(self.source.set_id).cases
-            case = next((c.name for c in cases if c.id == self.case_id), ALL)
-            self.case_button.setText(f"{case}  ▾")
+            _refill(
+                self.case_picker,
+                [(ALL, _ALL_DATA), *((c.name, c.id) for c in cases)],
+                self.case_id or _ALL_DATA,
+            )
 
     @override
     def showEvent(self, event: QShowEvent) -> None:

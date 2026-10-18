@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QLabel
+from PySide6.QtWidgets import QComboBox, QDialog, QLabel
 from pytestqt.qtbot import QtBot
 
 from cubetrainer.cases.catalog import CaseCustomization, CaseStatus
@@ -34,8 +34,8 @@ def test_lists_all_pll_cases(qtbot: QtBot) -> None:
     """Every PLL case gets an image, and all start unlearned."""
     page = make_page(qtbot, Database(":memory:"))
 
-    assert page.set_picker.text() == "PLL  ▾"
-    assert [a.text() for a in page.set_menu.actions()] == [
+    assert page.set_picker.currentText() == "PLL"
+    assert [page.set_picker.itemText(i) for i in range(page.set_picker.count())] == [
         "2-Look OLL",
         "2-Look PLL",
         "OLL",
@@ -103,25 +103,21 @@ def test_statuses_survive_restart(qtbot: QtBot, tmp_path: Path) -> None:
     assert "finished" in reopened.case_list.images["Jb"].toolTip()
 
 
-def test_set_picker_opens_menu(qtbot: QtBot) -> None:
-    """Clicking the set picker pops up the set menu below it."""
+def test_set_picker_is_a_combo_box(qtbot: QtBot) -> None:
+    """The set picker is a combo box listing the sets, ids as item data."""
     page = make_page(qtbot, Database(":memory:"))
 
-    qtbot.mouseClick(page.set_picker, Qt.MouseButton.LeftButton)
-
-    qtbot.waitUntil(page.set_menu.isVisible)
-    picker_bottom = page.set_picker.mapToGlobal(page.set_picker.rect().bottomLeft())
-    assert page.set_menu.pos().y() >= picker_bottom.y() - 1
-    page.set_menu.hide()
+    assert isinstance(page.set_picker, QComboBox)
+    assert page.set_picker.itemData(page.set_picker.currentIndex()) == "pll"
 
 
 def test_selecting_a_set_relabels_buttons(qtbot: QtBot) -> None:
-    """Choosing a set from the menu updates the picker and the Train button."""
+    """Choosing a set in the picker updates the list and the Train button."""
     page = make_page(qtbot, Database(":memory:"))
 
-    page.set_menu.actions()[2].trigger()
+    page.set_picker.setCurrentIndex(page.set_picker.findData("oll"))
 
-    assert page.set_picker.text() == "OLL  ▾"
+    assert page.set_picker.currentText() == "OLL"
     assert page.train_button.text() == "Train OLL"
     assert page.case_list.case_set.id == "oll"
     assert len(page.case_list.images) == 57
@@ -141,7 +137,7 @@ def test_opens_on_pll(qtbot: QtBot) -> None:
     qtbot.addWidget(page)
 
     assert page.case_list.case_set.id == "pll"
-    assert page.set_picker.text() == "PLL  ▾"
+    assert page.set_picker.currentText() == "PLL"
 
 
 def test_layout_is_the_same_for_every_set(qtbot: QtBot) -> None:

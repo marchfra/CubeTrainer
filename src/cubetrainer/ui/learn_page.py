@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING, override
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QFontMetrics, QMouseEvent, QShowEvent
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -31,6 +31,7 @@ from cubetrainer.db import Database, DbSessionStore, trainer_session_kind
 from cubetrainer.formatting import format_average, format_value
 from cubetrainer.ui.case_editor import CaseEditor
 from cubetrainer.ui.case_images import case_pixmap
+from cubetrainer.ui.dropdown import Dropdown
 from cubetrainer.ui.notation_dialog import NotationDialog
 from cubetrainer.ui.sizing import reserve_width
 
@@ -103,19 +104,6 @@ def _column_widths(bold: QFont, normal: QFont) -> dict[int, int]:
         5: time_width,
     }
     return {column: width + _COLUMN_SLACK for column, width in widths.items()}
-
-
-def _picker_text(set_name: str) -> str:
-    """Return the set picker's label for a set.
-
-    Args:
-        set_name: The set's name.
-
-    Returns:
-        e.g. ``"PLL  ▾"``.
-
-    """
-    return f"{set_name}  ▾"
 
 
 def _train_text(set_name: str) -> str:
@@ -339,8 +327,7 @@ class LearnPage(QWidget):
 
     Attributes:
         train_requested: Emitted with a set id when the user wants to train it.
-        set_picker: Button showing the current set; clicking it opens ``set_menu``.
-        set_menu: Menu choosing which set to show.
+        set_picker: Chooses which set to show.
         train_button: Starts the trainer for the selected set.
         notation_button: Shows the move notation reference.
         run_dialog: Runs a dialog and returns its result; replaceable in tests.
@@ -360,18 +347,15 @@ class LearnPage(QWidget):
         """
         super().__init__(parent)
         self._db: Database = db
-        # A plain push button that pops up a menu, rather than a combo box or a
-        # push button with an attached menu: macOS draws those 1-2 px higher than a
-        # plain push button, so next to the Train button they look misaligned.
-        self.set_picker: QPushButton = QPushButton()
+        # Sized for the longest set name (combo boxes size to all their items), so
+        # it doesn't resize when the set changes.
+        self.set_picker: QComboBox = Dropdown()
         self.set_picker.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.set_menu: QMenu = QMenu(self.set_picker)
         for set_id in AVAILABLE_SETS:
-            self.set_menu.addAction(
-                load_case_set(set_id).name,
-                lambda sid=set_id: self.select_set(sid),
-            )
-        self.set_picker.clicked.connect(self._pop_up_set_menu)
+            self.set_picker.addItem(load_case_set(set_id).name, set_id)
+        self.set_picker.currentIndexChanged.connect(
+            lambda index: self.select_set(self.set_picker.itemData(index)),
+        )
         self.train_button: QPushButton = QPushButton()
         self.train_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.train_button.clicked.connect(
@@ -404,7 +388,6 @@ class LearnPage(QWidget):
 
         names = [load_case_set(set_id).name for set_id in AVAILABLE_SETS]
         # Fixed widths: the buttons don't resize (and move) when the set changes.
-        reserve_width(self.set_picker, *(_picker_text(name) for name in names))
         reserve_width(self.train_button, *(_train_text(name) for name in names))
 
         self.case_list: CaseList = CaseList(load_case_set(DEFAULT_SET), db)
@@ -413,12 +396,6 @@ class LearnPage(QWidget):
     def show_notation(self) -> None:
         """Show the move notation reference."""
         self.run_dialog(NotationDialog(self))
-
-    def _pop_up_set_menu(self) -> None:
-        """Show the set menu just below the picker."""
-        self.set_menu.popup(
-            self.set_picker.mapToGlobal(self.set_picker.rect().bottomLeft()),
-        )
 
     @override
     def showEvent(self, event: QShowEvent) -> None:
@@ -449,5 +426,10 @@ class LearnPage(QWidget):
         """
         self.case_list = case_list
         self._scroll.setWidget(case_list)
-        self.set_picker.setText(_picker_text(case_list.case_set.name))
+        index = self.set_picker.findData(case_list.case_set.id)
+        if index != self.set_picker.currentIndex():
+            # Already showing this list: don't let the picker load it again.
+            self.set_picker.blockSignals(True)  # noqa: FBT003 - Qt's positional flag
+            self.set_picker.setCurrentIndex(index)
+            self.set_picker.blockSignals(False)  # noqa: FBT003 - Qt's positional flag
         self.train_button.setText(_train_text(case_list.case_set.name))

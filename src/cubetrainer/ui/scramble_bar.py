@@ -1,34 +1,16 @@
-"""Scramble display with previous / next / copy buttons."""
+"""Scramble display with previous / next / copy icon buttons."""
 
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QGuiApplication
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from cubetrainer.scramble_history import ScrambleHistory
-from cubetrainer.ui.sizing import reserve_width
+from cubetrainer.ui.icon_buttons import ChevronButton, CopyButton
+from cubetrainer.ui.theme import mono_font
 
 _COPIED_FEEDBACK_MS: int = 1200
-_COPY_TEXT: str = "Copy"
-_COPIED_TEXT: str = "Copied ✓"
-
-
-def _button(text: str, tooltip: str) -> QPushButton:
-    """Create a toolbar button that never takes keyboard focus.
-
-    Args:
-        text: Button label.
-        tooltip: Hover help text.
-
-    Returns:
-        The button.
-
-    """
-    button = QPushButton(text)
-    button.setToolTip(tooltip)
-    button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    return button
 
 
 class ScrambleBar(QWidget):
@@ -66,17 +48,13 @@ class ScrambleBar(QWidget):
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setWordWrap(True)
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        font = QFont()
-        font.setPointSize(22)
-        self.label.setFont(font)
+        self.label.setFont(mono_font(16))
 
-        self.prev_button: QPushButton = _button("◀", "Previous scramble")
-        self.next_button: QPushButton = _button("▶", "Next scramble")
-        self.copy_button: QPushButton = _button(
-            _COPY_TEXT,
-            "Copy scramble to clipboard",
-        )
-        reserve_width(self.copy_button, _COPIED_TEXT)
+        # Small borderless icons (like the timer's cog), leaving the scramble room
+        # to stay on one line.
+        self.prev_button: ChevronButton = ChevronButton("Previous scramble", left=True)
+        self.next_button: ChevronButton = ChevronButton("Next scramble", left=False)
+        self.copy_button: CopyButton = CopyButton("Copy scramble to clipboard")
         self.prev_button.clicked.connect(self.show_previous)
         self.next_button.clicked.connect(self.show_next)
         self.copy_button.clicked.connect(self.copy)
@@ -114,12 +92,12 @@ class ScrambleBar(QWidget):
     def copy(self) -> None:
         """Copy the current scramble to the clipboard and briefly confirm it."""
         QGuiApplication.clipboard().setText(self.scramble)
-        self.copy_button.setText(_COPIED_TEXT)
+        self.copy_button.set_copied(copied=True)
         # Using the button as context cancels the reset if the button is deleted first.
         QTimer.singleShot(
             _COPIED_FEEDBACK_MS,
             self.copy_button,
-            lambda: self.copy_button.setText(_COPY_TEXT),
+            lambda: self.copy_button.set_copied(copied=False),
         )
 
     def _update(self) -> None:

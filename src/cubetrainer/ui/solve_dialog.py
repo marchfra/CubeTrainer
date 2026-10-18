@@ -88,6 +88,12 @@ class SolveDialog(QDialog):
             QDialogButtonBox.ButtonRole.DestructiveRole,
         )
         self.delete_button.clicked.connect(lambda: self.done(self.DELETED))
+        # Red, and never the default: Return closes the dialog, it doesn't delete.
+        self.delete_button.setObjectName("dangerButton")
+        self.delete_button.setAutoDefault(False)
+        close_button = buttons.button(QDialogButtonBox.StandardButton.Close)
+        if close_button is not None:
+            close_button.setDefault(True)
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)

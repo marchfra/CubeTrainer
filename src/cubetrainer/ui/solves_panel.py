@@ -31,6 +31,7 @@ from cubetrainer.formatting import (
     format_value,
 )
 from cubetrainer.solves import SolveList
+from cubetrainer.ui.theme import number_font
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,26 +251,35 @@ class SummaryPanel(QWidget):
         super().__init__(parent)
         self._average_sizes: tuple[int, ...] = layout.average_sizes
         self._trainer: bool = layout.trainer
+        # A card (see the theme): muted labels, times in the fixed-width font, the
+        # best ones in the accent colour.
+        self.setObjectName("card")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         grid = QGridLayout(self)
-        bold = QFont()
-        bold.setBold(True)
+        grid.setContentsMargins(16, 12, 16, 12)
+        grid.setVerticalSpacing(6)
         for col, title in enumerate(("current", "best"), start=1):
             header = QLabel(title)
-            header.setFont(bold)
+            header.setObjectName("muted")
             header.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(header, 0, col)
 
         self.cells: dict[tuple[str, str], QLabel] = {}
         row_names = ["time", *(f"ao{n}" for n in self._average_sizes)]
         for row, name in enumerate(row_names, start=1):
-            grid.addWidget(QLabel(name), row, 0)
+            label = QLabel(name)
+            label.setObjectName("muted")
+            grid.addWidget(label, row, 0)
             for col, kind in enumerate(("current", "best"), start=1):
                 cell = QLabel()
                 cell.setAlignment(Qt.AlignmentFlag.AlignRight)
+                cell.setFont(number_font(16, QFont.Weight.Medium))
+                cell.setObjectName("best" if kind == "best" else "")
                 grid.addWidget(cell, row, col)
                 self.cells[name, kind] = cell
 
         self.mean_label: QLabel = QLabel()
+        self.mean_label.setObjectName("muted")
         grid.addWidget(self.mean_label, len(row_names) + 1, 0, 1, 3)
 
     def update_from(self, solves: SolveList) -> None:
@@ -339,6 +349,7 @@ class SolvesPanel(QWidget):
         self.model: SolvesTableModel = SolvesTableModel(solves, layout, case_name)
 
         self.table: QTableView = QTableView()
+        self.table.setShowGrid(False)  # row dividers come from the theme
         self.table.setModel(self.model)
         self.table.verticalHeader().hide()
         self.table.horizontalHeader().setSectionResizeMode(

@@ -11,6 +11,7 @@ import numpy as np
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QAction, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QGridLayout,
     QHBoxLayout,
@@ -18,7 +19,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QMessageBox,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -30,6 +30,8 @@ from cubetrainer.settings import MemorySettings, Settings, get_flag, set_flag
 from cubetrainer.solves import Penalty, Solve, SolveList
 from cubetrainer.sound import InspectionAudio
 from cubetrainer.ui.case_images import CaseInfo
+from cubetrainer.ui.dropdown import Dropdown
+from cubetrainer.ui.icon_buttons import MoreButton
 from cubetrainer.ui.scramble_bar import ScrambleBar
 from cubetrainer.ui.shortcuts import Shortcut, ShortcutsDialog
 from cubetrainer.ui.solve_dialog import SolveDialog
@@ -111,8 +113,10 @@ class TimerPage(QWidget):
     Attributes:
         sessions: The page's sessions.
         solves: The solves of the current session.
-        session_button: Shows the current session; opens ``session_menu``.
-        session_menu: Switches, adds, renames or deletes sessions.
+        session_picker: Chooses the current session.
+        session_actions_button: Opens ``session_menu`` (new, rename, delete).
+        delete_session_action: The menu's delete action (off for the last session).
+        session_menu: Adds, renames or deletes sessions.
         ask_text: Asks for a line of text; replaceable in tests.
         solves_panel: Summary and table of solves.
         scramble_bar: Shows the scramble to apply before the solve.
@@ -245,22 +249,41 @@ class TimerPage(QWidget):
 
     def _build_left_column(self) -> None:
         """Fill the body's left column: session button, statistics, solves table."""
+        # A combo box chooses the session; the actions (new, rename, delete) are
+        # in a menu behind the "more" button beside it, not among the choices.
+        self.session_picker: QComboBox = Dropdown()
+        self.session_picker.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.session_picker.setToolTip("Switch session")
+        self.session_picker.activated.connect(
+            lambda index: self.switch_session(self.session_picker.itemData(index)),
+        )
         self.session_menu: QMenu = QMenu(self)
-        self.session_menu.aboutToShow.connect(self._fill_session_menu)
-        self.session_button: QPushButton = QPushButton()
-        self.session_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.session_button.setToolTip("Switch, add, rename or delete sessions")
-        self.session_button.clicked.connect(
+        self.session_menu.addAction("New session…", self.new_session)
+        self.session_menu.addAction("Rename session…", self.rename_session)
+        self.delete_session_action: QAction = self.session_menu.addAction(
+            "Delete session…",
+            self.delete_session,
+        )
+        self.session_actions_button: MoreButton = MoreButton(
+            "New, rename or delete sessions",
+        )
+        self.session_actions_button.clicked.connect(
             lambda: self.session_menu.popup(
-                self.session_button.mapToGlobal(
-                    self.session_button.rect().bottomLeft(),
+                self.session_actions_button.mapToGlobal(
+                    self.session_actions_button.rect().bottomLeft(),
                 ),
             ),
         )
-        self._update_session_button()
+        session_row = QWidget()
+        row_layout = QHBoxLayout(session_row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(6)
+        row_layout.addWidget(self.session_picker, stretch=1)
+        row_layout.addWidget(self.session_actions_button)
+        self._update_session_picker()
 
         for row, widget in enumerate(
-            (self.session_button, self.solves_panel.summary, self.solves_panel.table),
+            (session_row, self.solves_panel.summary, self.solves_panel.table),
         ):
             widget.setFixedWidth(SIDE_COLUMN_WIDTH)
             self.grid.addWidget(widget, row + 1, 0)
@@ -282,29 +305,18 @@ class TimerPage(QWidget):
         self.grid.addWidget(title, 1, 2)
         self.grid.addWidget(table, 2, 2, 2, 1)
 
-    def _fill_session_menu(self) -> None:
-        """Rebuild the session menu: every session (the current one ticked), actions."""
-        self.session_menu.clear()
-        current = self.sessions.current()
+    def _update_session_picker(self) -> None:
+        """List the sessions in the picker, the current one selected."""
         sessions = self.sessions.sessions()
+        picker = self.session_picker
+        picker.blockSignals(True)  # noqa: FBT003 - Qt's positional flag
+        picker.clear()
         for session in sessions:
-            action = self.session_menu.addAction(session.name)
-            action.setCheckable(True)
-            action.setChecked(session.id == current)
-            action.triggered.connect(
-                lambda _=False, sid=session.id: self.switch_session(sid),
-            )
-        self.session_menu.addSeparator()
-        self.session_menu.addAction("New session…", self.new_session)
-        self.session_menu.addAction("Rename session…", self.rename_session)
-        delete = self.session_menu.addAction("Delete session…", self.delete_session)
-        delete.setEnabled(len(sessions) > 1)
-
-    def _update_session_button(self) -> None:
-        """Show the current session's name on the session button."""
-        current = self.sessions.current()
-        name = next(s.name for s in self.sessions.sessions() if s.id == current)
-        self.session_button.setText(f"{name}  ▾")
+            picker.addItem(session.name, session.id)
+        picker.setCurrentIndex(max(picker.findData(self.sessions.current()), 0))
+        picker.blockSignals(False)  # noqa: FBT003 - Qt's positional flag
+        # The last session can't be deleted.
+        self.delete_session_action.setEnabled(len(sessions) > 1)
 
     def switch_session(self, session_id: int) -> None:
         """Make a session current and show its solves.
@@ -316,7 +328,7 @@ class TimerPage(QWidget):
         self.sessions.select(session_id)
         self.solves = self.sessions.solves(session_id)
         self.show_session_solves()
-        self._update_session_button()
+        self._update_session_picker()
 
     def show_session_solves(self) -> None:
         """Point every view at ``solves`` after the session changed (subclasses add)."""
@@ -340,7 +352,7 @@ class TimerPage(QWidget):
         name = self.ask_text("New name of the session:", old)
         if name:
             self.sessions.rename(current, name)
-            self._update_session_button()
+            self._update_session_picker()
 
     def delete_session(self) -> None:
         """Delete the current session and its solves, after asking (never the last)."""

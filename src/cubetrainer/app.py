@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication
 from cubetrainer.db import Database, default_db_path
 from cubetrainer.sound import quiet_audio_warnings
 from cubetrainer.ui.main_window import MainWindow
+from cubetrainer.ui.theme import follow_system_mode
 
 
 def main() -> None:
@@ -17,6 +18,7 @@ def main() -> None:
     quiet_audio_warnings()
     app = QApplication(sys.argv)
     app.setApplicationName("CubeTrainer")
+    follow_system_mode(app)
     db = Database(default_db_path())
     app.aboutToQuit.connect(db.close)
     window = MainWindow(db)

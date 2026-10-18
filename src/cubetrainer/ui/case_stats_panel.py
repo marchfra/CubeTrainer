@@ -264,6 +264,7 @@ class CaseStatsPanel(QWidget):
         self.proxy.setSortRole(SORT_ROLE)
 
         self.table: QTableView = QTableView()
+        self.table.setShowGrid(False)  # row dividers come from the theme
         self.table.setModel(self.proxy)
         self.table.setSortingEnabled(True)
         self.table.sortByColumn(0, Qt.SortOrder.AscendingOrder)

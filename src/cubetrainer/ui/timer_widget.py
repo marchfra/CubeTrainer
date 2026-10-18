@@ -21,6 +21,7 @@ from cubetrainer.inspection import inspection_text, warnings_between
 from cubetrainer.timing import TimerMachine, TimerState, format_ms
 from cubetrainer.ui.icon_buttons import CogButton, KeyboardButton
 from cubetrainer.ui.shortcuts import Shortcut
+from cubetrainer.ui.theme import number_font
 
 #: Display colour for each state; an empty string means the default text colour.
 STATE_COLORS: dict[TimerState, str] = {
@@ -122,14 +123,12 @@ class TimerWidget(QWidget):
 
         self.display: QLabel = QLabel(format_ms(0))
         self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        font = QFont()
-        font.setPointSize(96)
-        # Tabular (fixed-width) digits keep the number from jittering while it runs.
-        font.setFeature(QFont.Tag("tnum"), 1)
-        self.display.setFont(font)
+        # Fixed-width digits keep the number from jittering while it runs.
+        self.display.setFont(number_font(112, QFont.Weight.Light))
 
         self.hint: QLabel = QLabel(HINT_TEXT)
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.hint.setObjectName("muted")
 
         # In the bottom-right corner, outside the layout, so the time stays
         # centred (``resizeEvent`` keeps them in place): options, then shortcuts.

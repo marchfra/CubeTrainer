@@ -1,5 +1,7 @@
 """Tests for the keyboard shortcuts list."""
 
+from typing import TYPE_CHECKING
+
 import pytest
 from PySide6.QtWidgets import QDialog
 from pytestqt.qtbot import QtBot
@@ -14,6 +16,9 @@ from cubetrainer.ui.shortcuts import (
 from cubetrainer.ui.timer_page import TimerPage
 from cubetrainer.ui.timer_widget import TIMER_KEYS
 from cubetrainer.ui.trainer_page import TrainerPage
+
+if TYPE_CHECKING:
+    from PySide6.QtGui import QColor
 
 
 @pytest.mark.parametrize(
@@ -124,3 +129,32 @@ def test_cog_opens_the_options_menu_above_it(qtbot: QtBot) -> None:
     cog_top = page.options_button.mapToGlobal(page.options_button.rect().topLeft())
     assert page.options_menu.geometry().bottom() < cog_top.y() + 1
     page.options_menu.hide()
+
+
+def test_highlight_clears_when_the_pointer_leaves_unseen(
+    qtbot: QtBot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After a click opens a menu, the button turns grey again by itself.
+
+    The menu takes the mouse, so no "leave" event arrives; the button re-checks
+    the pointer while it's highlighted.
+    """
+    button = CogButton()
+    qtbot.addWidget(button)
+    button.show()
+    qtbot.waitExposed(button)
+    drawn: list[QColor] = []
+    monkeypatch.setattr(
+        button,
+        "draw_icon",
+        lambda _painter, color: drawn.append(color),
+    )
+    accent = button.palette().accent().color()
+
+    monkeypatch.setattr(button, "pointer_inside", lambda: True)
+    button.update()
+    qtbot.waitUntil(lambda: bool(drawn) and drawn[-1] == accent)
+
+    monkeypatch.setattr(button, "pointer_inside", lambda: False)  # no event, no update
+    qtbot.waitUntil(lambda: drawn[-1] != accent, timeout=1000)

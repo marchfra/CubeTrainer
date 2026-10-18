@@ -8,9 +8,10 @@ hover, darker while pressed; both follow light and dark mode.
 import math
 from typing import override
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QColor,
+    QCursor,
     QPainter,
     QPainterPath,
     QPaintEvent,
@@ -18,6 +19,9 @@ from PySide6.QtGui import (
     QPolygonF,
 )
 from PySide6.QtWidgets import QAbstractButton, QWidget
+
+#: How often a highlighted button checks whether the pointer has left, in ms.
+_HOVER_RECHECK_MS: int = 150
 
 
 class IconButton(QAbstractButton):
@@ -51,18 +55,24 @@ class IconButton(QAbstractButton):
         """
         return self.SIZE
 
-    def ink(self, *, hovered: bool, pressed: bool) -> QColor:
+    def ink(self, *, hovered: bool, pressed: bool, enabled: bool = True) -> QColor:
         """Return the colour to draw the icon in.
 
         Args:
             hovered: Whether the mouse is over the button.
             pressed: Whether the button is held down.
+            enabled: Whether the button can be clicked.
 
         Returns:
-            A faint text colour, or the accent colour (darker when pressed).
+            A faint text colour (fainter when disabled), or the accent colour
+            (darker when pressed).
 
         """
         palette = self.palette()
+        if not enabled:
+            faint = QColor(palette.windowText().color())
+            faint.setAlphaF(0.15)
+            return faint
         if not hovered and not pressed:
             muted = QColor(palette.windowText().color())
             muted.setAlphaF(0.4)  # visible, but quieter than any text
@@ -88,15 +98,38 @@ class IconButton(QAbstractButton):
 
         """
         del e
+        hovered = self.pointer_inside()
+        if hovered:
+            # A menu or dialog opened by a click takes the mouse, so the button
+            # never hears that the pointer left; check again until it has.
+            QTimer.singleShot(_HOVER_RECHECK_MS, self, self.update)
         painter = QPainter(self)
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             self.draw_icon(
                 painter,
-                self.ink(hovered=self.underMouse(), pressed=self.isDown()),
+                self.ink(
+                    hovered=hovered,
+                    pressed=self.isDown(),
+                    enabled=self.isEnabled(),
+                ),
             )
         finally:
             painter.end()  # even if drawing fails, or Qt complains about it
+
+    def pointer_inside(self) -> bool:
+        """Return whether the mouse pointer is over the button right now.
+
+        Asked of the pointer's position rather than of hover events, which stop
+        while a menu or dialog the button opened has the mouse.
+
+        Returns:
+            True if the pointer is inside the button.
+
+        """
+        return self.isVisible() and self.rect().contains(
+            self.mapFromGlobal(QCursor.pos()),
+        )
 
 
 class KeyboardButton(IconButton):
@@ -190,3 +223,138 @@ class CogButton(IconButton):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(wheel)
         painter.drawEllipse(centre, hole, hole)
+
+
+class ChevronButton(IconButton):
+    """Shows a chevron pointing left or right (previous / next)."""
+
+    def __init__(
+        self,
+        tooltip: str,
+        *,
+        left: bool,
+        parent: QWidget | None = None,
+    ) -> None:
+        """Create the button.
+
+        Args:
+            tooltip: What the button does.
+            left: Point left (else right).
+            parent: Optional parent widget.
+
+        """
+        super().__init__(tooltip, parent)
+        self.left: bool = left
+
+    @override
+    def draw_icon(self, painter: QPainter, color: QColor) -> None:
+        """Draw the chevron.
+
+        Args:
+            painter: An antialiased painter on the button.
+            color: The colour to draw in.
+
+        """
+        x, y = self.width() / 2, self.height() / 2
+        reach = -3.5 if self.left else 3.5
+        pen = QPen(color, 2.0)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.drawPolyline(
+            QPolygonF(
+                [
+                    QPointF(x - reach, y - 7),
+                    QPointF(x + reach, y),
+                    QPointF(x - reach, y + 7),
+                ],
+            ),
+        )
+
+
+class CopyButton(IconButton):
+    """Shows two overlapping sheets (copy), or a tick right after copying.
+
+    Attributes:
+        copied: Whether the tick is shown.
+
+    """
+
+    def __init__(self, tooltip: str, parent: QWidget | None = None) -> None:
+        """Create the button.
+
+        Args:
+            tooltip: What the button does.
+            parent: Optional parent widget.
+
+        """
+        super().__init__(tooltip, parent)
+        self.copied: bool = False
+
+    def set_copied(self, *, copied: bool) -> None:
+        """Show the tick (just copied) or the copy icon.
+
+        Args:
+            copied: Show the tick.
+
+        """
+        self.copied = copied
+        self.update()
+
+    @override
+    def draw_icon(self, painter: QPainter, color: QColor) -> None:
+        """Draw the sheets, or the tick in the accent colour.
+
+        Args:
+            painter: An antialiased painter on the button.
+            color: The colour to draw in.
+
+        """
+        x, y = self.width() / 2, self.height() / 2
+        pen = QPen(color, 1.5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        if self.copied:
+            pen.setColor(self.palette().accent().color())
+            pen.setWidthF(2.0)
+            painter.setPen(pen)
+            painter.drawPolyline(
+                QPolygonF(
+                    [QPointF(x - 6, y), QPointF(x - 2, y + 4), QPointF(x + 6, y - 5)],
+                ),
+            )
+            return
+        painter.setPen(pen)
+        painter.drawRoundedRect(QRectF(x - 3, y - 7, 10, 12), 2.5, 2.5)
+        # The back sheet shows only where the front one doesn't cover it.
+        painter.drawPolyline(
+            QPolygonF(
+                [
+                    QPointF(x - 5, y - 4),
+                    QPointF(x - 7, y - 4),
+                    QPointF(x - 7, y + 8),
+                    QPointF(x + 2, y + 8),
+                    QPointF(x + 2, y + 6),
+                ],
+            ),
+        )
+
+
+class MoreButton(IconButton):
+    """Shows three dots in a row (more actions)."""
+
+    @override
+    def draw_icon(self, painter: QPainter, color: QColor) -> None:
+        """Draw the dots.
+
+        Args:
+            painter: An antialiased painter on the button.
+            color: The colour to draw in.
+
+        """
+        x, y = self.width() / 2, self.height() / 2
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        for dx in (-6.0, 0.0, 6.0):
+            painter.drawEllipse(QPointF(x + dx, y), 1.7, 1.7)

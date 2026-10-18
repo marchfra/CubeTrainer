@@ -20,9 +20,10 @@ if TYPE_CHECKING:
     from cubetrainer.ui.time_graph import GraphColors
 
 
-#: Colour of the observed data (a neutral grey), for light and dark mode.
-DATA_LIGHT: str = "#a9a7a0"
-DATA_DARK: str = "#77756f"
+#: Colour of the observed data (a neutral grey, cool like the theme's), for light
+#: and dark mode.
+DATA_LIGHT: str = "#a7acb8"
+DATA_DARK: str = "#5f6677"
 
 
 def style_axes(axes: Axes, colors: GraphColors, surface: str) -> None:

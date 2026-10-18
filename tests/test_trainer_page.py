@@ -2,12 +2,13 @@
 
 import pytest
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontMetricsF, QPixmap
 from PySide6.QtWidgets import QDialog, QLabel, QWidget
 from pytestqt.qtbot import QtBot
 
 from cubetrainer.cases.catalog import CaseCustomization, CaseStatus, load_case_set
 from cubetrainer.cases.filters import CaseFilter, MemoryTrainerPrefs, Odds
-from cubetrainer.cube.model import parse_alg
+from cubetrainer.cube.model import alg_pieces, parse_alg
 from cubetrainer.db import Database
 from cubetrainer.sessions import MemorySessionStore
 from cubetrainer.solves import Solve
@@ -19,8 +20,9 @@ from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.trainer_page import (
     DIALOG_IMAGE_SIZE,
     HINT_PROMPT,
-    MISTAKE_COLOR,
     TrainerPage,
+    breakable_spaces,
+    wrap_pieces,
 )
 from tests.helpers import FakeClock, do_solve
 
@@ -185,28 +187,31 @@ def test_hints_reveal_one_move_at_a_time(qtbot: QtBot, page: TrainerPage) -> Non
     assert page.hint_panel.moves.text() == HINT_PROMPT
     assert page.hint_panel.image.pixmap().isNull()
     height = page.hint_panel.height()
+    card = page.hint_panel.card.size()
 
     qtbot.keyClick(page, Qt.Key.Key_Right)
     assert page.hints_shown == 1
     assert not page.hint_panel.image.pixmap().isNull()
     assert page.hint_panel.height() == height
-    assert page.hint_panel.moves.text() == "(R"
-    assert page.hint_panel.remaining.text().count("•") == total - 1
+    assert page.hint_panel.shown_text == "(R"
+    assert page.hint_panel.hidden_moves == total - 1
+    assert page.hint_panel.card.size() == card  # the card never changes size
 
     for _ in range(3):
         qtbot.keyClick(page, Qt.Key.Key_Right)
     # Four moves: the first group is complete, closing bracket included.
-    assert page.hint_panel.moves.text() == "(R U R' U')"
-    assert page.hint_panel.remaining.text().count("•") == total - 4
+    assert page.hint_panel.shown_text == "(R U R' U')"
+    assert page.hint_panel.hidden_moves == total - 4
 
     qtbot.keyClick(page, Qt.Key.Key_Right)
-    assert page.hint_panel.moves.text() == "(R U R' U') (R'"
+    assert page.hint_panel.shown_text == "(R U R' U') (R'"
 
     for _ in range(total + 3):
         qtbot.keyClick(page, Qt.Key.Key_Right)
     assert page.hints_shown == total
-    assert page.hint_panel.moves.text() == T_CASE.alg
-    assert page.hint_panel.remaining.isHidden()
+    assert page.hint_panel.shown_text == T_CASE.alg
+    assert page.hint_panel.hidden_moves == 0
+    assert page.hint_panel.card.size() == card
 
 
 def test_hint_does_not_stop_running_solve(
@@ -401,48 +406,9 @@ def test_learn_page_shows_trainer_times(qtbot: QtBot, clock: FakeClock) -> None:
     assert cards.mean_labels[case.id].text() == "1.50"
 
 
-def test_mistake_button_turns_red_when_checked(page: TrainerPage) -> None:
-    """The button is labelled "Mistake" and styled red only when checked."""
-    button = page.mistake_button
-
-    assert button.text() == "Mistake"
-    style = button.styleSheet()
-    assert style.startswith(f"#{button.objectName()}:checked {{")
-    assert MISTAKE_COLOR in style
-
-
-def test_mistake_button_keeps_its_size_when_opened_checked(
-    qtbot: QtBot,
-    clock: FakeClock,
-) -> None:
-    """Opening on a mistake (button checked) doesn't squeeze the native button."""
-    db = Database(":memory:")
-    first = MainWindow(db)
-    qtbot.addWidget(first)
-    first.show()
-    first.open_trainer("pll")
-    trainer = first.trainer_pages["pll"]
-    trainer.timer._clock = clock
-    do_solve(qtbot, trainer, clock, 1_500)
-    trainer.toggle_mistake()
-
-    window = MainWindow(db)
-    qtbot.addWidget(window)
-    window.show()
-    window.open_trainer("pll")
-    button = window.trainer_pages["pll"].mistake_button
-    fresh = TrainerPage(load_case_set("pll"))  # opened unchecked
-    qtbot.addWidget(fresh)
-    native = fresh.mistake_button.sizeHint()
-
-    assert button.isChecked()
-    assert button.minimumSize() == native
-    assert button.width() >= native.width()
-
-
 def test_filter_button_describes_the_filter(page: TrainerPage) -> None:
     """The fixture's filter keeps only T, picked with equal probability."""
-    assert page.filter_button.text() == "1 case · equal  ▾"
+    assert page.filter_button.text() == "1 case · equal"
 
 
 def test_accepting_the_filter_saves_it_and_rescrambles(page: TrainerPage) -> None:
@@ -460,7 +426,7 @@ def test_accepting_the_filter_saves_it_and_rescrambles(page: TrainerPage) -> Non
 
     assert page.prefs.load_filter().odds is Odds.REALISTIC
     assert CaseStatus.UNLEARNED in page.prefs.load_filter().statuses
-    assert page.filter_button.text() == "21 cases · realistic  ▾"
+    assert page.filter_button.text() == "21 cases · realistic"
     assert page.scramble_bar.history.index == first + 1
 
 
@@ -495,7 +461,7 @@ def test_filter_button_warns_when_nothing_matches(qtbot: QtBot) -> None:
     page.hide()
     page.show()  # showing the page again refreshes the button
 
-    assert page.filter_button.text() == "⚠ all 21 · equal  ▾"
+    assert page.filter_button.text() == "⚠ all 21 · equal"
     assert page.filter_button.toolTip().startswith("No case matches the filter")
 
 
@@ -511,7 +477,7 @@ def test_oll_trainer_recognises_and_hints(qtbot: QtBot, clock: FakeClock) -> Non
 
     trainer = window.trainer_pages["oll"]
     assert trainer.title.text() == "OLL trainer"
-    assert trainer.filter_button.text() == "57 cases · equal  ▾"
+    assert trainer.filter_button.text() == "57 cases · equal"
     trainer.timer._clock = clock
     trainer.show_next_hint()
     assert trainer.hints_shown == 1
@@ -534,7 +500,7 @@ def test_two_look_trainers(
     trainer = window.trainer_pages[set_id]
     trainer.timer._clock = clock
 
-    assert trainer.filter_button.text() == f"{count} cases · equal  ▾"
+    assert trainer.filter_button.text() == f"{count} cases · equal"
     do_solve(qtbot, trainer, clock, 1_000)
     assert trainer.solves.solves[-1].case_id is not None
 
@@ -553,7 +519,7 @@ def test_trainer_uses_the_users_alg(qtbot: QtBot, clock: FakeClock) -> None:
 
     for _ in range(100):
         page.show_next_hint()
-    assert page.hint_panel.moves.text() == own_alg
+    assert page.hint_panel.shown_text == own_alg
 
     do_solve(qtbot, page, clock, 1_000)
     assert page.solves.solves[-1].case_id == "T"
@@ -611,7 +577,7 @@ def test_filter_button_names_slowest_first(qtbot: QtBot) -> None:
     page = TrainerPage(PLL, prefs=prefs)
     qtbot.addWidget(page)
 
-    assert page.filter_button.text() == "21 cases · slowest  ▾"
+    assert page.filter_button.text() == "21 cases · slowest"
 
 
 def test_filter_button_keeps_its_width(page: TrainerPage) -> None:
@@ -629,7 +595,7 @@ def test_filter_button_keeps_its_width(page: TrainerPage) -> None:
 def test_hint_prompt_is_centred_over_the_timer(page: TrainerPage) -> None:
     """Before the first hint only the prompt shows: no empty image beside it."""
     assert page.hint_panel.image.isHidden()
-    assert page.hint_panel.remaining.isHidden()
+    assert page.hint_panel.moves.alignment() & Qt.AlignmentFlag.AlignHCenter
 
 
 def test_timer_is_centred_between_the_tables(qtbot: QtBot) -> None:
@@ -656,3 +622,57 @@ def test_timer_is_centred_between_the_tables(qtbot: QtBot) -> None:
     title_top, title_bottom = top_and_bottom(page.title)
     assert scramble_top <= title_bottom
     assert title_top <= scramble_bottom
+
+
+ALG = "(R U R' U') (R' F R2 U') (R' U' R U) (R' F')"
+
+
+def test_lines_break_between_bracket_groups() -> None:
+    """Only the space before a new group (or a move outside groups) may break."""
+    pieces = alg_pieces(ALG + " U", 3)
+    breaks = breakable_spaces(pieces, 24)
+
+    breakable = [piece for (piece, _), ok in zip(pieces, breaks, strict=True) if ok]
+    assert breakable == ["(", " (", " (", " (", " U"]
+
+
+def test_a_group_longer_than_a_line_may_break() -> None:
+    """A group that can't fit on one line breaks like plain moves."""
+    pieces = alg_pieces("(R U R' U' R U R' U')", 0)
+
+    assert all(breakable_spaces(pieces, 10))
+
+
+def test_hint_keeps_groups_together_in_the_label(page: TrainerPage) -> None:
+    """Spaces inside groups are non-breaking in the shown and the masked text."""
+    panel = page.hint_panel
+    panel.show_hint(QPixmap(8, 8), ALG, 5)
+    rows = panel.moves.text().split("<br>")
+
+    expected = wrap_pieces(alg_pieces(ALG, 5), panel.line_length())
+    assert len(rows) == len(expected)
+    assert all('<span style="color:' in row or "·" not in row for row in rows)
+    width = panel.moves.width()
+    panel.show_hint(QPixmap(8, 8), ALG, 14)
+    assert panel.moves.width() == width  # revealing moves never resizes the text
+
+
+def test_wrap_keeps_groups_whole() -> None:
+    """Lines end between groups, and a new line drops the space before it."""
+    lines = wrap_pieces(alg_pieces(ALG, 0), 24)
+
+    texts = ["".join(text for text, _ in line) for line in lines]
+    assert texts == ["(R U R' U') (R' F R2 U')", "(R' U' R U) (R' F')"]
+
+
+def test_hint_text_is_wide_enough_for_its_lines(page: TrainerPage) -> None:
+    """The text box fits its longest line (Ra's last bracket used to be cut off)."""
+    ra = "(R U R' F') (R U2 R' U2) (R' F) (R U R U2) (R' U')"
+    panel = page.hint_panel
+    panel.show_hint(QPixmap(8, 8), ra, 0)
+    metrics = QFontMetricsF(panel.moves.font())
+
+    for line in wrap_pieces(alg_pieces(ra, 99), panel.line_length()):
+        text = "".join(piece for piece, _ in line)
+        assert metrics.horizontalAdvance(text) <= panel.moves.width()
+    assert panel.moves.width() <= panel.card.width()
