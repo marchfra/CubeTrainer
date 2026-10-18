@@ -11,3 +11,6 @@ wheels/
 
 # macOS
 .DS_Store
+
+# The app bundle recipe is written by hand (a global ignore may exclude *.spec)
+!app_bundle/CubeTrainer.spec

@@ -187,6 +187,24 @@ and averages and means are rounded to the nearest hundredth.
 
     uv run cubetrainer
 
+### As a Mac app
+
+Build `CubeTrainer.app` (about 250 MB, about a minute) and put it in
+`/Applications`, where Spotlight, Launchpad and the Dock find it:
+
+    uv run python app_bundle/build_app.py --install
+
+Without `--install` it's only built, in `dist/`. The app contains its own Python
+and libraries, so it runs without uv or a terminal, and it uses the same data
+folder as `uv run cubetrainer`. It holds a copy of the code: rebuild after
+changes. The first launch takes a little longer (macOS checks the app, and
+matplotlib builds its font cache once). The app isn't signed with an Apple
+developer certificate; built on this Mac it opens normally, but a copy downloaded
+from elsewhere would need right-click → Open the first time.
+
+`app_bundle/` holds the build: the PyInstaller recipe (`CubeTrainer.spec`), the
+launcher, and the icon (`make_icon.py` draws it, as `CubeTrainer.icns`).
+
 ## Data
 
 Solves, case statuses and your case edits are stored in a SQLite database
@@ -246,6 +264,7 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
         data/              bundled OLL and PLL cases and default algorithms
       ui/                  Qt widgets: main window, timer/trainer/learn pages, dialogs,
                            time graph (matplotlib)
+    app_bundle/            builds CubeTrainer.app: PyInstaller recipe, launcher, icon
     tests/                 pytest + pytest-qt
 
 ## License

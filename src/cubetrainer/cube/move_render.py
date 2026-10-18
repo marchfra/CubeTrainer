@@ -178,18 +178,111 @@ def render_move(base: str, size: int) -> QImage:
         The image, on a transparent background.
 
     """
-    image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
-    image.fill(Qt.GlobalColor.transparent)
-    turned = turned_stickers(base)
+    return _render_cube(size, turned_stickers(base), move_arrows(base))
+
+
+def render_solved_cube(
+    size: int,
+    *,
+    stickers: bool = True,
+    line: float = 1.0,
+) -> QImage:
+    """Draw the solved cube, every sticker in colour, without arrows (the app icon).
+
+    Args:
+        size: Width and height of the image, in pixels.
+        stickers: Draw the 3x3 stickers; False draws each face as one block of
+            colour, which stays readable at icon sizes of a few pixels.
+        line: Thickness of the dark lines, relative to the usual.
+
+    Returns:
+        The image, on a transparent background.
+
+    """
+    if not stickers:
+        return _render_faces(size, line)
+    return _render_cube(size, frozenset(range(len(STICKERS))), [], line)
+
+
+def _scale_for(size: int) -> float:
+    """Return the drawing scale fitting the cube in a square image.
+
+    Args:
+        size: The image's side, in pixels.
+
+    Returns:
+        Pixels per cube unit.
+
+    """
     half_width, half_height = _EXTENT
     margin = 0.15
-    scale = size / (2 * max(half_width, half_height) + 2 * margin)
+    return size / (2 * max(half_width, half_height) + 2 * margin)
+
+
+def _render_faces(size: int, line: float) -> QImage:
+    """Draw the solved cube's visible faces as solid blocks of colour.
+
+    Args:
+        size: Width and height of the image, in pixels.
+        line: Thickness of the lines between faces, relative to the usual.
+
+    Returns:
+        The image, on a transparent background.
+
+    """
+    image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
+    scale = _scale_for(size)
     painter = QPainter(image)
     try:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.translate(size / 2, size / 2)
         painter.scale(scale, scale)
-        outline = QPen(QColor(INK_COLOR), 1.0 / scale)
+        pen = QPen(QColor(INK_COLOR), line / scale)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        for face in VISIBLE_FACES:
+            normal = FACE_NORMALS[face]
+            u, v = _face_axes(normal)
+            centre: Point3 = (1.5 * normal[0], 1.5 * normal[1], 1.5 * normal[2])
+            corners = [
+                _project(_add(_add(centre, u, du), v, dv))
+                for du, dv in ((-1.5, -1.5), (1.5, -1.5), (1.5, 1.5), (-1.5, 1.5))
+            ]
+            painter.setBrush(QColor(COLOR_SCHEME[face]))
+            painter.drawPolygon(QPolygonF(corners))
+    finally:
+        painter.end()
+    return image
+
+
+def _render_cube(
+    size: int,
+    coloured: frozenset[int],
+    arrows: list[tuple[Point3, Point3]],
+    line: float = 1.0,
+) -> QImage:
+    """Draw the cube in isometric view, some stickers in colour, with arrows.
+
+    Args:
+        size: Width and height of the image, in pixels.
+        coloured: Stickers (facelet indices) drawn in their colour; the rest grey.
+        arrows: (tail, tip) of each arrow, in cube coordinates.
+        line: Thickness of the sticker outlines, relative to the usual.
+
+    Returns:
+        The image, on a transparent background.
+
+    """
+    image = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
+    scale = _scale_for(size)
+    painter = QPainter(image)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.translate(size / 2, size / 2)
+        painter.scale(scale, scale)
+        outline = QPen(QColor(INK_COLOR), line / scale)
         outline.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         for face in VISIBLE_FACES:
             u, v = _face_axes(FACE_NORMALS[face])
@@ -205,11 +298,11 @@ def render_move(base: str, size: int) -> QImage:
                         (-_STICKER_HALF, _STICKER_HALF),
                     )
                 ]
-                color = COLOR_SCHEME[face] if index in turned else STILL_COLOR
+                color = COLOR_SCHEME[face] if index in coloured else STILL_COLOR
                 painter.setPen(outline)
                 painter.setBrush(QColor(color))
                 painter.drawPolygon(QPolygonF(corners))
-        for tail, tip in move_arrows(base):
+        for tail, tip in arrows:
             _arrow(painter, _project(tail), _project(tip), scale)
     finally:
         painter.end()
