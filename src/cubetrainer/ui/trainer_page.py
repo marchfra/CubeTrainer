@@ -32,7 +32,7 @@ from cubetrainer.ui.case_images import CaseInfo, case_pixmap
 from cubetrainer.ui.case_stats_panel import CaseStatsPanel
 from cubetrainer.ui.filter_dialog import FilterDialog
 from cubetrainer.ui.solves_panel import TRAINER_LAYOUT, PanelLayout
-from cubetrainer.ui.theme import mono_font
+from cubetrainer.ui.theme import FontRole, set_theme_font
 from cubetrainer.ui.timer_page import TimerPage
 
 #: Size of the case image in the solve dialog, in logical pixels.
@@ -85,7 +85,7 @@ class HintPanel(QWidget):
         self.image: QLabel = QLabel()
         self.image.setFixedSize(HINT_IMAGE_SIZE, HINT_IMAGE_SIZE)
         self.moves: QLabel = QLabel()
-        self.moves.setFont(mono_font(19, QFont.Weight.Medium))
+        set_theme_font(self.moves, FontRole.MONO, 19, QFont.Weight.Medium)
         self.moves.setTextFormat(Qt.TextFormat.RichText)  # lines wrapped in _render
         self.shown_text: str = ""
         self.hidden_moves: int = 0
@@ -203,7 +203,11 @@ class HintPanel(QWidget):
 
         """
         super().changeEvent(event)
-        if event.type() == QEvent.Type.PaletteChange and self._pieces:
+        # New colours (dots) or a new font (line length, width): render again.
+        if (
+            event.type() in {QEvent.Type.PaletteChange, QEvent.Type.FontChange}
+            and self._pieces
+        ):
             self._render()
 
 

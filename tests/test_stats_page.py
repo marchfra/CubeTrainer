@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox
 from pytestqt.qtbot import QtBot
 
@@ -280,3 +281,10 @@ def test_sub_x_changes_do_not_redraw_plots(
 
     assert calls == []
     assert page.sub_x_label.text() == "50%  (1 of 2)"
+
+
+def test_sub_x_value_is_right_aligned(qtbot: QtBot) -> None:
+    """The sub-X limit lines up with the numbers: right-aligned."""
+    page = make_page(qtbot, Database(":memory:"))
+
+    assert page.sub_x.alignment() & Qt.AlignmentFlag.AlignRight

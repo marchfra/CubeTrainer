@@ -9,6 +9,7 @@ solve.
 from __future__ import annotations
 
 import math
+import warnings
 from typing import TYPE_CHECKING, override
 
 from matplotlib.backend_bases import Event, MouseEvent
@@ -26,6 +27,15 @@ if TYPE_CHECKING:
     from matplotlib.lines import Line2D
 
     from cubetrainer.solves import SolveList
+
+# The graph can be drawn while its canvas is still zero-sized (before the first
+# layout, or hidden behind a trainer during a theme switch); the automatic layout
+# then complains, harmlessly: the next real draw lays it out properly.
+warnings.filterwarnings(
+    "ignore",
+    message="constrained_layout not applied",
+    category=UserWarning,
+)
 
 #: Fewest solves worth drawing a line for.
 _MIN_SOLVES: int = 2

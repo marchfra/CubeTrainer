@@ -9,8 +9,17 @@ from typing import TYPE_CHECKING, override
 
 import numpy as np
 import shiboken6
-from PySide6.QtCore import QPoint, Qt, QTimer
-from PySide6.QtGui import QAction, QFont, QKeySequence, QShortcut, QShowEvent
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QKeySequence,
+    QPainter,
+    QPaintEvent,
+    QShortcut,
+    QShowEvent,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -30,14 +39,17 @@ from cubetrainer.sessions import MemorySessionStore, SessionStore, next_session_
 from cubetrainer.settings import MemorySettings, Settings, get_flag, set_flag
 from cubetrainer.solves import Penalty, Solve, SolveList
 from cubetrainer.sound import InspectionAudio
+from cubetrainer.ui import theme
 from cubetrainer.ui.case_images import CaseInfo
 from cubetrainer.ui.chart_style import GRAPH_HEIGHT
 from cubetrainer.ui.dropdown import Dropdown
 from cubetrainer.ui.icon_buttons import MoreButton
 from cubetrainer.ui.scramble_bar import ScrambleBar
+from cubetrainer.ui.settings_dialog import APP_KEYS
 from cubetrainer.ui.shortcuts import Shortcut, ShortcutsDialog
 from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.solves_panel import TIMER_LAYOUT, PanelLayout, SolvesPanel
+from cubetrainer.ui.theme import FontRole, set_theme_font
 from cubetrainer.ui.timer_widget import TIMER_KEYS, TimerWidget
 
 if TYPE_CHECKING:
@@ -143,6 +155,7 @@ class TimerPage(QWidget):
         shortcuts: The keyboard shortcuts, keyed by key sequence string.
         confirm: Asks a yes/no question; replaceable in tests.
         run_dialog: Runs a dialog and returns its result; replaceable in tests.
+        settings_requested: Emitted when the user asks for the Settings window.
         PANEL_LAYOUT: Statistics and columns of the solves panel.
         SETTINGS_PREFIX: Start of this page's setting names.
         INSPECTION_DEFAULT: Whether inspection is on until the user changes it.
@@ -151,6 +164,8 @@ class TimerPage(QWidget):
             is first shown (it's built just after, so the window opens sooner).
 
     """
+
+    settings_requested = Signal()
 
     PANEL_LAYOUT: PanelLayout = TIMER_LAYOUT
     SETTINGS_PREFIX: str = "timer"
@@ -206,10 +221,7 @@ class TimerPage(QWidget):
         self.timer.solve_finished.connect(self._on_solve_finished)
 
         self.title: QLabel = QLabel("Full timer")
-        font = QFont()
-        font.setPointSize(18)
-        font.setBold(True)
-        self.title.setFont(font)
+        set_theme_font(self.title, FontRole.UI, 18, QFont.Weight.Bold)
         self.header_left: QHBoxLayout = QHBoxLayout()
         self.header_left.addWidget(self.title)
         self.header_left.addStretch()
@@ -225,6 +237,7 @@ class TimerPage(QWidget):
         # it needs matplotlib, which takes a while to load, and the window
         # shouldn't wait for it. Its space is kept meanwhile, so nothing moves.
         self.time_graph: TimeGraph | None = None
+        self._right_column: QWidget | None = None  # its table (add_right_column)
         self._graph_slot: QWidget | None = None
         if self.SHOW_GRAPH:
             self._graph_slot = QWidget(self)
@@ -256,6 +269,60 @@ class TimerPage(QWidget):
             self.delete_last,
             "Delete the last solve (asks first)",
         )
+
+    @override
+    def paintEvent(self, event: QPaintEvent) -> None:
+        """Paint the theme's toolbar strip and sidebars, if it has them (Clean).
+
+        They run edge to edge behind the header row and the side columns, with
+        hairlines between them and the middle; the panels on them are see-through.
+
+        Args:
+            event: The paint event.
+
+        """
+        super().paintEvent(event)
+        colors = theme.current_colors()
+        if not colors.sidebar:
+            return
+        # From the widgets' own places: the grid's cell rectangles can be stale
+        # while a layout is being redone.
+        header_bottom = max(
+            self.title.geometry().bottom(),
+            self.scramble_bar.geometry().bottom(),
+        )
+        column_top = self._session_row.geometry().top()
+        left = self.solves_panel.table.geometry()
+        middle = self.timer.geometry()
+        toolbar_bottom = header_bottom + (column_top - header_bottom) // 2
+        left_edge = left.right() + (middle.left() - left.right()) // 2
+        painter = QPainter(self)
+        try:
+            painter.fillRect(0, 0, self.width(), toolbar_bottom, QColor(colors.toolbar))
+            below = self.height() - toolbar_bottom
+            painter.fillRect(
+                0,
+                toolbar_bottom,
+                left_edge,
+                below,
+                QColor(colors.sidebar),
+            )
+            painter.setPen(QColor(colors.hairline))
+            painter.drawLine(0, toolbar_bottom, self.width(), toolbar_bottom)
+            painter.drawLine(left_edge, toolbar_bottom, left_edge, self.height())
+            if self._right_column is not None:
+                right = self._right_column.geometry()
+                right_edge = middle.right() + (right.left() - middle.right()) // 2
+                painter.fillRect(
+                    right_edge,
+                    toolbar_bottom + 1,
+                    self.width() - right_edge,
+                    below,
+                    QColor(colors.sidebar),
+                )
+                painter.drawLine(right_edge, toolbar_bottom, right_edge, self.height())
+        finally:
+            painter.end()
 
     @override
     def showEvent(self, event: QShowEvent) -> None:
@@ -333,6 +400,7 @@ class TimerPage(QWidget):
             ),
         )
         session_row = QWidget()
+        self._session_row: QWidget = session_row
         row_layout = QHBoxLayout(session_row)
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(6)
@@ -357,6 +425,7 @@ class TimerPage(QWidget):
             table: Goes under the title.
 
         """
+        self._right_column = table
         self.grid.removeItem(self.center_column)
         self.grid.addLayout(self.center_column, 1, 1, 3, 1)
         table.setFixedWidth(SIDE_COLUMN_WIDTH)
@@ -458,6 +527,9 @@ class TimerPage(QWidget):
         )
         for action in (self.inspection_action, self.hold_action, self.audio_action):
             action.toggled.connect(self._on_options_changed)
+        self.options_menu.addSeparator()
+        # App-wide, but easy to find here; the window opens it (settings_requested).
+        self.options_menu.addAction("Settings…", self.settings_requested.emit)
         self._on_options_changed()
 
         # The cog in the timer's corner: the options are all about the timer.
@@ -533,7 +605,11 @@ class TimerPage(QWidget):
 
     def show_shortcuts(self) -> None:
         """Show every keyboard shortcut: the timer's keys, then this page's."""
-        sections = [("Timer", TIMER_KEYS), (self.title.text(), self.shortcut_help)]
+        sections = [
+            ("Timer", TIMER_KEYS),
+            (self.title.text(), self.shortcut_help),
+            ("App", APP_KEYS),
+        ]
         self.run_dialog(ShortcutsDialog(sections, self))
 
     def set_last_penalty(self, penalty: Penalty) -> None:

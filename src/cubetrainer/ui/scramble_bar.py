@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from cubetrainer.scramble_history import ScrambleHistory
 from cubetrainer.ui.icon_buttons import ChevronButton, CopyButton
-from cubetrainer.ui.theme import mono_font
+from cubetrainer.ui.theme import FontRole, set_theme_font
 
 _COPIED_FEEDBACK_MS: int = 1200
 
@@ -48,7 +48,7 @@ class ScrambleBar(QWidget):
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setWordWrap(True)
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.label.setFont(mono_font(16))
+        set_theme_font(self.label, FontRole.MONO, 16)
 
         # Small borderless icons (like the timer's cog), leaving the scramble room
         # to stay on one line.

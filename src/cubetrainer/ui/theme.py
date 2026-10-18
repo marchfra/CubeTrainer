@@ -1,22 +1,31 @@
-"""The app's look: colours, fonts and the style sheet built from them.
+"""The app's look: themes, light/dark mode, and the style sheet built from them.
 
 A ``Theme`` is a small set of named values (two colour sets, light and dark, plus
-fonts and a corner radius); the style sheet is generated from those values, so a
-new look is a new ``Theme`` and nothing else. The app follows the system's light
-or dark mode and re-applies the theme when it changes.
+fonts, a corner radius and two traits: flat panels, a coloured timer card); the
+style sheet is generated from those values. Three themes ship (Calm, Clean, Bold);
+the user picks one, and light, dark or the system's mode, in the Settings window.
+
+Widgets with a special font (times, moves) register a font *role* with
+``set_theme_font``, so switching themes gives them the new theme's fonts too.
 """
 
 import tempfile
 from dataclasses import dataclass
+from enum import StrEnum
 from functools import cache
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
-#: Where the bundled fonts are (SIL Open Font License, see OFL.txt there).
+from cubetrainer.settings import Settings
+
+#: Where the bundled fonts are (SIL Open Font License, see the OFL files there).
 FONTS_DIR: Path = Path(__file__).parent / "fonts"
+
+#: Font family meaning "the system's interface font" (San Francisco on macOS).
+SYSTEM_FONT: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +49,12 @@ class Colors:
         danger_soft: Background tint of the Mistake button.
         danger_border: Outline of the Mistake button.
         selection: Background of selected rows and menu items.
+        success: Positive state, e.g. the timer when it's ready to start.
+        card: The timer card's colour (timer card themes), if not the accent: white
+            text on it must stay readable.
+        sidebar: Tint of the side columns, painted edge to edge ("" for none).
+        toolbar: Tint of the header row ("" for none).
+        hairline: Lines between the toolbar, the sidebars and the middle.
 
     """
 
@@ -59,33 +74,56 @@ class Colors:
     danger_soft: str
     danger_border: str
     selection: str
+    success: str
+    card: str = ""
+    sidebar: str = ""
+    toolbar: str = ""
+    hairline: str = ""
+
+    @property
+    def timer_card(self) -> str:
+        """The timer card's colour: ``card``, or the accent if it has none."""
+        return self.card or self.accent
 
 
 @dataclass(frozen=True, slots=True)
 class Theme:
-    """A named look: colours for light and dark mode, fonts and roundness.
+    """A named look: colours for light and dark mode, fonts, roundness and traits.
 
     Attributes:
         name: Shown to the user.
+        description: One line about the look, for the Settings window.
         light: Colours in light mode.
         dark: Colours in dark mode.
-        ui_font: Family of the interface text.
-        mono_font: Family of times and moves (fixed-width digits).
+        ui_font: Family of the interface text and times (``SYSTEM_FONT`` for the
+            system's).
+        mono_font: Family of scrambles and moves (must be fixed-width: hidden
+            moves are masked with dots of the same width).
         radius: Corner radius of panels, in pixels (controls use a smaller one).
+        timer_weight: Weight of the big time.
+        flat: Panels without boxes: tables and cards on the background, separated
+            by hairlines.
+        timer_card: The timer is a card in the accent colour that turns red while
+            held and green when ready (instead of the time changing colour).
 
     """
 
     name: str
+    description: str
     light: Colors
     dark: Colors
     ui_font: str
     mono_font: str
     radius: int
+    timer_weight: QFont.Weight = QFont.Weight.Light
+    flat: bool = False
+    timer_card: bool = False
 
 
 #: Soft panels on a near-black (or light grey) ground, one violet accent.
 CALM: Theme = Theme(
     name="Calm",
+    description="Soft rounded panels, one violet accent",
     light=Colors(
         background="#f3f4f7",
         surface="#ffffff",
@@ -103,6 +141,7 @@ CALM: Theme = Theme(
         danger_soft="rgba(212, 60, 76, 0.08)",
         danger_border="rgba(212, 60, 76, 0.35)",
         selection="rgba(107, 92, 240, 0.14)",
+        success="#30a46c",
     ),
     dark=Colors(
         background="#0e1014",
@@ -121,41 +160,257 @@ CALM: Theme = Theme(
         danger_soft="rgba(255, 92, 108, 0.12)",
         danger_border="rgba(255, 92, 108, 0.4)",
         selection="rgba(140, 125, 255, 0.22)",
+        success="#3dd68c",
     ),
     ui_font="Geist",
     mono_font="Geist Mono",
     radius=14,
 )
 
-#: The theme in use (a setting may choose another one later).
+#: Like a Mac app: the system font, flat panels with hairlines, system blue.
+CLEAN: Theme = Theme(
+    name="Clean",
+    description="Like a Mac app: sidebars, hairlines, the system font",
+    light=Colors(
+        background="#ffffff",
+        surface="#ffffff",
+        raised="#ffffff",
+        raised_hover="#f5f5f7",
+        border="#d2d2d7",
+        border_strong="#c7c7cc",
+        divider="#ececee",
+        text="#1d1d1f",
+        muted="#7a7a7f",
+        faint="#c7c7cc",
+        accent="#0071e3",
+        accent_text="#ffffff",
+        danger="#d70015",
+        danger_soft="rgba(215, 0, 21, 0.06)",
+        danger_border="rgba(215, 0, 21, 0.3)",
+        selection="rgba(0, 113, 227, 0.12)",
+        success="#248a3d",
+        sidebar="#f6f6f7",
+        toolbar="#fbfbfc",
+        hairline="#e5e5e7",
+    ),
+    dark=Colors(
+        background="#1e1e1e",
+        surface="#1e1e1e",
+        raised="#48484a",
+        raised_hover="#545456",
+        border="#48484a",
+        border_strong="#636366",
+        divider="#323234",
+        text="#f5f5f7",
+        muted="#98989d",
+        faint="#545456",
+        accent="#0a84ff",
+        accent_text="#ffffff",
+        danger="#ff6961",
+        danger_soft="rgba(255, 105, 97, 0.14)",
+        danger_border="rgba(255, 105, 97, 0.45)",
+        selection="rgba(10, 132, 255, 0.25)",
+        success="#30d158",
+        sidebar="#252527",
+        toolbar="#2a2a2c",
+        hairline="#000000",
+    ),
+    ui_font=SYSTEM_FONT,
+    mono_font="Menlo",
+    radius=6,
+    timer_weight=QFont.Weight.Thin,
+    flat=True,
+)
+
+#: Space Grotesk, soft borderless panels, and the timer as a coloured card.
+BOLD: Theme = Theme(
+    name="Bold",
+    description="The timer is a big coloured card",
+    light=Colors(
+        background="#eceef2",
+        surface="#ffffff",
+        raised="#ffffff",
+        raised_hover="#f4f5f8",
+        border="#e3e6ec",
+        border_strong="#cfd3dc",
+        divider="#f0f1f4",
+        text="#12131a",
+        muted="#646a78",
+        faint="#a3a8b5",
+        accent="#2f4bff",
+        accent_text="#ffffff",
+        danger="#c8283a",
+        danger_soft="rgba(200, 40, 58, 0.08)",
+        danger_border="rgba(200, 40, 58, 0.4)",
+        selection="rgba(47, 75, 255, 0.12)",
+        success="#16a34a",
+    ),
+    dark=Colors(
+        background="#0b0c10",
+        surface="#16181f",
+        raised="#1f222b",
+        raised_hover="#272b36",
+        border="#23262f",
+        border_strong="#343845",
+        divider="#1f222b",
+        text="#eef0f5",
+        muted="#8a90a0",
+        faint="#4b505d",
+        accent="#5b74ff",
+        accent_text="#ffffff",
+        danger="#ff7d8a",
+        danger_soft="rgba(255, 92, 108, 0.12)",
+        danger_border="rgba(255, 92, 108, 0.4)",
+        selection="rgba(91, 116, 255, 0.22)",
+        success="#22c55e",
+        card="#3d5afe",  # the accent is lighter, for blue text on the dark ground
+    ),
+    ui_font="Space Grotesk",
+    mono_font="Space Mono",
+    radius=18,
+    timer_weight=QFont.Weight.DemiBold,
+    timer_card=True,
+)
+
+#: Every theme, by name, in the order the Settings window lists them.
+THEMES: dict[str, Theme] = {theme.name: theme for theme in (CALM, CLEAN, BOLD)}
+
+
+class Appearance(StrEnum):
+    """Light or dark mode: the system's, or always one of them."""
+
+    SYSTEM = "system"
+    LIGHT = "light"
+    DARK = "dark"
+
+
+#: Setting names for the user's choices.
+THEME_SETTING: str = "app.theme"
+APPEARANCE_SETTING: str = "app.appearance"
+
+#: The theme in use (changed by ``use_theme``).
 CURRENT: Theme = CALM
+
+#: The light/dark choice in use (changed by ``use_theme``).
+APPEARANCE: Appearance = Appearance.SYSTEM
 
 
 def is_dark() -> bool:
-    """Return whether the system is in dark mode.
+    """Return whether the app is in dark mode (forced by the user, or the system's).
 
     Returns:
         True in dark mode.
 
     """
+    if APPEARANCE is not Appearance.SYSTEM:
+        return APPEARANCE is Appearance.DARK
     return QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
 
 
-def current_colors(theme: Theme = CURRENT) -> Colors:
-    """Return a theme's colours for the system's current mode.
+def current_colors(theme: Theme | None = None) -> Colors:
+    """Return a theme's colours for the current mode.
 
     Args:
-        theme: The theme.
+        theme: The theme; the one in use if omitted.
 
     Returns:
         Its dark colours in dark mode, else its light ones.
 
     """
+    theme = theme or CURRENT
     return theme.dark if is_dark() else theme.light
 
 
+def _family(name: str) -> str:
+    """Resolve a theme's font family (``SYSTEM_FONT`` means the system's).
+
+    Args:
+        name: A family, or ``SYSTEM_FONT``.
+
+    Returns:
+        A family Qt knows.
+
+    """
+    if name == SYSTEM_FONT:
+        return QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family()
+    return name
+
+
+class FontRole(StrEnum):
+    """What a font is for; each theme says which family and weight that means."""
+
+    UI = "ui"  # interface text
+    NUMBER = "number"  # times and statistics: the UI font with fixed-width digits
+    TIMER = "timer"  # the big time: like NUMBER, in the theme's timer weight
+    MONO = "mono"  # scrambles and moves: fixed-width
+
+
+def theme_font(
+    role: FontRole,
+    point_size: float,
+    weight: QFont.Weight = QFont.Weight.Normal,
+) -> QFont:
+    """Return the current theme's font for a role.
+
+    Args:
+        role: What the font is for.
+        point_size: Size in points.
+        weight: Weight (ignored for ``TIMER``, which uses the theme's).
+
+    Returns:
+        The font. Times get tabular figures, so a running time doesn't jitter.
+
+    """
+    family = CURRENT.mono_font if role is FontRole.MONO else CURRENT.ui_font
+    font = QFont(_family(family))
+    font.setPointSizeF(point_size)
+    font.setWeight(CURRENT.timer_weight if role is FontRole.TIMER else weight)
+    if role in {FontRole.NUMBER, FontRole.TIMER}:
+        font.setFeature(QFont.Tag("tnum"), 1)
+    return font
+
+
+#: Property holding a widget's font role, size and weight (see set_theme_font).
+_FONT_PROPERTY: str = "themeFont"
+
+
+def set_theme_font(
+    widget: QWidget,
+    role: FontRole,
+    point_size: float,
+    weight: QFont.Weight = QFont.Weight.Normal,
+) -> None:
+    """Give a widget the theme's font for a role, now and after theme switches.
+
+    Args:
+        widget: The widget.
+        role: What its font is for.
+        point_size: Size in points.
+        weight: Weight.
+
+    """
+    widget.setProperty(_FONT_PROPERTY, f"{role.value}:{point_size}:{weight.value}")
+    widget.setFont(theme_font(role, point_size, weight))
+
+
+def _refresh_theme_fonts(app: QApplication) -> None:
+    """Re-apply the registered font roles after a theme switch.
+
+    Args:
+        app: The application.
+
+    """
+    for widget in app.allWidgets():
+        spec = widget.property(_FONT_PROPERTY)
+        if isinstance(spec, str):
+            role, size, weight = spec.split(":")
+            widget.setFont(
+                theme_font(FontRole(role), float(size), QFont.Weight(int(weight))),
+            )
+
+
 def mono_font(point_size: float, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
-    """Return the theme's fixed-width font, for times and moves.
+    """Return the current theme's fixed-width font, for scrambles and moves.
 
     Args:
         point_size: Size in points.
@@ -165,20 +420,14 @@ def mono_font(point_size: float, weight: QFont.Weight = QFont.Weight.Normal) -> 
         The font.
 
     """
-    font = QFont(CURRENT.mono_font)
-    font.setPointSizeF(point_size)
-    font.setWeight(weight)
-    return font
+    return theme_font(FontRole.MONO, point_size, weight)
 
 
 def number_font(
     point_size: float,
     weight: QFont.Weight = QFont.Weight.Normal,
 ) -> QFont:
-    """Return the theme's font for times: the UI font with fixed-width digits.
-
-    The fixed-width font would do too, but its zero is slashed, which reads badly
-    in a large time.
+    """Return the current theme's font for times: the UI font with fixed-width digits.
 
     Args:
         point_size: Size in points.
@@ -188,11 +437,7 @@ def number_font(
         The font, with tabular figures so a running time doesn't jitter.
 
     """
-    font = QFont(CURRENT.ui_font)
-    font.setPointSizeF(point_size)
-    font.setWeight(weight)
-    font.setFeature(QFont.Tag("tnum"), 1)
-    return font
+    return theme_font(FontRole.NUMBER, point_size, weight)
 
 
 def load_fonts() -> list[str]:
@@ -300,17 +545,18 @@ def icon_path(name: str, color: str) -> str:
     return path.as_posix()
 
 
-def style_sheet(colors: Colors, theme: Theme = CURRENT) -> str:
+def style_sheet(colors: Colors, theme: Theme | None = None) -> str:
     """Build the app's style sheet from a theme's colours.
 
     Args:
         colors: The colours (light or dark).
-        theme: The theme (for the radius).
+        theme: The theme (radius, traits); the one in use if omitted.
 
     Returns:
         The style sheet.
 
     """
+    theme = theme or CURRENT
     c = colors
     r = theme.radius
     small = max(r - 6, 4)
@@ -399,9 +645,11 @@ QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
 }}
 QCheckBox, QRadioButton {{ spacing: 8px; color: {c.text}; }}
 QCheckBox:disabled, QRadioButton:disabled {{ color: {c.faint}; }}
+/* Indicators are 16 px whether checked or not, in whole pixels (a fractional
+   border rounds differently per state and nudges the label sideways). */
 QCheckBox::indicator, QRadioButton::indicator {{
     width: 14px; height: 14px;
-    border: 1.5px solid {c.border_strong}; background: {c.surface};
+    border: 1px solid {c.border_strong}; background: {c.surface};
 }}
 QCheckBox::indicator {{ border-radius: 5px; }}
 QRadioButton::indicator {{ border-radius: 8px; }}
@@ -413,7 +661,7 @@ QCheckBox::indicator:checked {{
 }}
 QRadioButton::indicator:checked {{
     background: {c.accent_text}; border: 5px solid {c.accent};
-    width: 7px; height: 7px;
+    width: 6px; height: 6px;
 }}
 QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
     border-color: {c.divider}; background: transparent;
@@ -466,13 +714,45 @@ QWidget#card {{
     background: {c.surface}; border: 1px solid {c.border}; border-radius: {r}px;
 }}
 QLabel#muted {{ color: {c.muted}; }}
+QLabel#onCard {{ color: rgba(255, 255, 255, 0.8); }}
 QLabel#best {{ color: {c.accent}; }}
+""" + (_flat_rules(c) if theme.flat else "")
+
+
+def _flat_rules(c: Colors) -> str:
+    """Return the rules that flatten panels (the ``flat`` trait).
+
+    Tables, cards and group boxes lose their boxes and sit on the background;
+    hairlines separate them instead.
+
+    Args:
+        c: The colours.
+
+    Returns:
+        Style sheet rules, applied after (and so over) the boxed ones.
+
+    """
+    return f"""
+QTableView {{
+    background: transparent; border: none; border-radius: 0;
+    border-top: 1px solid {c.border}; border-bottom: 1px solid {c.border};
+}}
+QHeaderView::section {{ background: transparent; }}
+QTableCornerButton::section {{ background: transparent; }}
+QWidget#card {{
+    background: transparent; border: none; border-radius: 0;
+    border-bottom: 1px solid {c.divider};
+}}
+QGroupBox {{
+    background: transparent; border: none; border-radius: 0;
+    border-top: 1px solid {c.border};
+}}
 """
 
 
 def apply_theme(
     app: QApplication,
-    theme: Theme = CURRENT,
+    theme: Theme | None = None,
     *,
     dark: bool | None = None,
 ) -> None:
@@ -480,28 +760,95 @@ def apply_theme(
 
     Args:
         app: The application.
-        theme: The theme.
-        dark: Dark mode or not; None follows the system.
+        theme: The theme; the one in use if omitted (else it becomes the one in
+            use).
+        dark: Dark mode or not; None follows the current mode.
 
     """
+    global CURRENT  # noqa: PLW0603 - the app has one theme at a time
     load_fonts()
+    if theme is not None:
+        CURRENT = theme
+    theme = CURRENT
     colors = theme.dark if (is_dark() if dark is None else dark) else theme.light
-    font = QFont(theme.ui_font)
+    font = QFont(_family(theme.ui_font))
     font.setPointSizeF(13)
     app.setFont(font)
     app.setPalette(palette_for(colors))
     app.setStyleSheet(style_sheet(colors, theme))
+    _refresh_theme_fonts(app)
 
 
-def follow_system_mode(app: QApplication, theme: Theme = CURRENT) -> None:
-    """Apply a theme now and again whenever the system switches light/dark mode.
+#: Qt colour scheme for each appearance (Unknown: the system's).
+_SCHEMES: dict[Appearance, Qt.ColorScheme] = {
+    Appearance.SYSTEM: Qt.ColorScheme.Unknown,
+    Appearance.LIGHT: Qt.ColorScheme.Light,
+    Appearance.DARK: Qt.ColorScheme.Dark,
+}
+
+
+def use_theme(app: QApplication, theme: Theme, appearance: Appearance) -> None:
+    """Switch the app to a theme and a light/dark choice.
+
+    The choice also goes to Qt, so native parts (title bar, dialogs) follow it.
 
     Args:
         app: The application.
         theme: The theme.
+        appearance: Light, dark, or the system's mode.
 
     """
+    global APPEARANCE  # noqa: PLW0603 - the app has one appearance at a time
+    APPEARANCE = appearance
+    app.styleHints().setColorScheme(_SCHEMES[appearance])
     apply_theme(app, theme)
+
+
+def saved_choice(settings: Settings) -> tuple[Theme, Appearance]:
+    """Return the theme and light/dark choice saved in the settings.
+
+    Args:
+        settings: Where they're kept.
+
+    Returns:
+        The theme and appearance (Calm and the system's mode if never chosen, or
+        if what's saved is unknown).
+
+    """
+    theme = THEMES.get(settings.get_setting(THEME_SETTING) or "", CALM)
+    try:
+        appearance = Appearance(settings.get_setting(APPEARANCE_SETTING) or "")
+    except ValueError:
+        appearance = Appearance.SYSTEM
+    return theme, appearance
+
+
+def save_choice(settings: Settings, theme: Theme, appearance: Appearance) -> None:
+    """Remember the theme and light/dark choice.
+
+    Args:
+        settings: Where to keep them.
+        theme: The theme.
+        appearance: The appearance.
+
+    """
+    settings.set_setting(THEME_SETTING, theme.name)
+    settings.set_setting(APPEARANCE_SETTING, appearance.value)
+
+
+def follow_system_mode(app: QApplication, settings: Settings | None = None) -> None:
+    """Apply the saved theme now, and again whenever light/dark mode changes.
+
+    Args:
+        app: The application.
+        settings: Where the user's choice is saved; Calm and the system's mode if
+            omitted.
+
+    """
+    if settings is None:
+        use_theme(app, CALM, Appearance.SYSTEM)
+    else:
+        use_theme(app, *saved_choice(settings))
     QGuiApplication.styleHints().colorSchemeChanged.connect(
-        lambda _scheme: apply_theme(app, theme),
+        lambda _scheme: apply_theme(app),
     )

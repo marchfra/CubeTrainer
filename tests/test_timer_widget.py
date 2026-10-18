@@ -41,12 +41,12 @@ def test_hold_shows_red_then_green(
     """Holding space colours the display red, then green after the hold delay."""
     qtbot.keyPress(timer, Qt.Key.Key_Space)
     assert timer.machine.state is TimerState.HOLDING
-    assert STATE_COLORS[TimerState.HOLDING] in timer.display.styleSheet()
+    assert text_color(timer) == STATE_COLORS[TimerState.HOLDING]
 
     clock.advance_ms(300)
     timer.refresh()
     assert timer.machine.state is TimerState.READY
-    assert STATE_COLORS[TimerState.READY] in timer.display.styleSheet()
+    assert text_color(timer) == STATE_COLORS[TimerState.READY]
 
 
 def test_full_solve_emits_time_and_shows_it(
@@ -61,7 +61,7 @@ def test_full_solve_emits_time_and_shows_it(
     assert blocker.args == [12_345, "ok"]
     assert timer.machine.state is TimerState.IDLE
     assert timer.display.text() == "12.34"
-    assert timer.display.styleSheet() == ""
+    assert text_color(timer) == ""  # the app's text colour
 
 
 def test_any_key_stops_running_timer(
@@ -200,7 +200,7 @@ def test_inspection_counts_down_and_warns(
     assert warnings == [8_000, 12_000]
 
     qtbot.keyPress(timer, Qt.Key.Key_Space)
-    assert STATE_COLORS[TimerState.HOLDING] in timer.display.styleSheet()
+    assert text_color(timer) == STATE_COLORS[TimerState.HOLDING]
     assert timer.display.text() == "+2"  # still the countdown while holding
     clock.advance_ms(300)
     with qtbot.waitSignal(timer.solve_finished) as blocker:
@@ -233,11 +233,24 @@ def test_hold_to_inspect_shows_fifteen_while_arming(
 
     qtbot.keyPress(timer, Qt.Key.Key_Space)
     assert timer.display.text() == "15"
-    assert STATE_COLORS[TimerState.HOLDING] in timer.display.styleSheet()
+    assert text_color(timer) == STATE_COLORS[TimerState.HOLDING]
     clock.advance_ms(300)
     timer.refresh()
-    assert STATE_COLORS[TimerState.READY] in timer.display.styleSheet()
+    assert text_color(timer) == STATE_COLORS[TimerState.READY]
 
     qtbot.keyRelease(timer, Qt.Key.Key_Space)
     assert timer.machine.state is TimerState.INSPECTING
     assert timer.display.text() == "15"
+
+
+def text_color(timer: TimerWidget) -> str:
+    """Return the colour the time is drawn in.
+
+    Args:
+        timer: The timer.
+
+    Returns:
+        The colour, or "" for the app's text colour.
+
+    """
+    return timer.display.color

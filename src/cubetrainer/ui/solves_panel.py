@@ -31,7 +31,7 @@ from cubetrainer.formatting import (
     format_value,
 )
 from cubetrainer.solves import SolveList
-from cubetrainer.ui.theme import number_font
+from cubetrainer.ui.theme import FontRole, set_theme_font
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,7 +273,7 @@ class SummaryPanel(QWidget):
             for col, kind in enumerate(("current", "best"), start=1):
                 cell = QLabel()
                 cell.setAlignment(Qt.AlignmentFlag.AlignRight)
-                cell.setFont(number_font(16, QFont.Weight.Medium))
+                set_theme_font(cell, FontRole.NUMBER, 16, QFont.Weight.Medium)
                 cell.setObjectName("best" if kind == "best" else "")
                 grid.addWidget(cell, row, col)
                 self.cells[name, kind] = cell

@@ -44,6 +44,19 @@ class IconButton(QAbstractButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover)  # repaint on enter/leave
         self.setToolTip(tooltip)
+        self._on_card: bool = False
+
+    def set_on_card(self, *, on_card: bool) -> None:
+        """Draw in white, for a button on a coloured card (e.g. Bold's timer).
+
+        On a card in the accent colour, the accent hover colour wouldn't show.
+
+        Args:
+            on_card: Whether the button sits on a coloured card.
+
+        """
+        self._on_card = on_card
+        self.update()
 
     @override
     def sizeHint(self) -> QSize:
@@ -65,9 +78,16 @@ class IconButton(QAbstractButton):
 
         Returns:
             A faint text colour (fainter when disabled), or the accent colour
-            (darker when pressed).
+            (darker when pressed); on a card, white in the same strengths.
 
         """
+        if self._on_card:
+            white = QColor("#ffffff")
+            alpha = (
+                0.25 if not enabled else 0.8 if pressed else 1.0 if hovered else 0.55
+            )
+            white.setAlphaF(alpha)
+            return white
         palette = self.palette()
         if not enabled:
             faint = QColor(palette.windowText().color())

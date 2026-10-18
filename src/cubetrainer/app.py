@@ -18,8 +18,8 @@ def main() -> None:
     quiet_audio_warnings()
     app = QApplication(sys.argv)
     app.setApplicationName("CubeTrainer")
-    follow_system_mode(app)
     db = Database(default_db_path())
+    follow_system_mode(app, db)  # the saved theme and light/dark choice
     app.aboutToQuit.connect(db.close)
     window = MainWindow(db)
     window.show()

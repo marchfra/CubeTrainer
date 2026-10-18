@@ -14,10 +14,7 @@ from typing import TYPE_CHECKING, override
 import numpy as np
 
 from cubetrainer.fits import MIN_FIT_SAMPLES, ExGaussianFit, fit_ex_gaussian
-from cubetrainer.ui.chart_style import DARK, GraphColors
 from cubetrainer.ui.plot_canvas import (
-    DATA_DARK,
-    DATA_LIGHT,
     PlotWidget,
     style_axes,
     title_axes,
@@ -28,6 +25,8 @@ if TYPE_CHECKING:
 
     from matplotlib.axes import Axes
     from PySide6.QtWidgets import QWidget
+
+    from cubetrainer.ui.chart_style import GraphColors
 
 #: Height of the plot, in logical pixels.
 PLOTS_HEIGHT: int = 320
@@ -135,7 +134,7 @@ class HistogramPlot(PlotWidget):
             times,
             bins=edges.tolist(),
             density=True,
-            color=DATA_DARK if colors is DARK else DATA_LIGHT,
+            color=colors.data,
             edgecolor=surface,  # a gap between neighbouring bars
             linewidth=1.5,
             label="your times",

@@ -34,6 +34,7 @@ from cubetrainer.ui.dropdown import Dropdown
 from cubetrainer.ui.learn_page import AVAILABLE_SETS
 from cubetrainer.ui.learning_plots import CaseCharts, LearningCurvePlot
 from cubetrainer.ui.record_plots import RecordsPlot
+from cubetrainer.ui.theme import FontRole, set_theme_font
 
 #: Shown for an option that covers everything (sessions or cases).
 ALL: str = "All"
@@ -112,6 +113,9 @@ def load_solves(
     return solves
 
 
+#: Width a number field needs besides its text: padding, border and arrows.
+_SPIN_EXTRA: int = 48
+
 #: Item data meaning "all sessions" or "all cases" in a picker.
 _ALL_DATA: str = ""
 
@@ -165,9 +169,7 @@ def _value_label() -> QLabel:
     """
     label = QLabel()
     label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    font = QFont()
-    font.setFeature(QFont.Tag("tnum"), 1)
-    label.setFont(font)
+    set_theme_font(label, FontRole.NUMBER, 13)
     return label
 
 
@@ -242,6 +244,11 @@ class StatsPage(QWidget):
         self.sub_x.setDecimals(2)
         self.sub_x.setSingleStep(1)
         self.sub_x.setSuffix(" s")
+        self.sub_x.setAlignment(Qt.AlignmentFlag.AlignRight)  # like the numbers
+        # Room for "0000.00 s" plus the arrows, and no more.
+        self.sub_x.setFixedWidth(
+            self.sub_x.fontMetrics().horizontalAdvance("0000.00 s") + _SPIN_EXTRA,
+        )
         self.sub_x.setValue(DEFAULT_SUB_X)
         self.sub_x.valueChanged.connect(self._update_sub_x)
 
@@ -340,7 +347,7 @@ class StatsPage(QWidget):
         bold.setBold(True)
         for col, title in enumerate(("current", "best"), start=1):
             header = QLabel(title)
-            header.setFont(bold)
+            set_theme_font(header, FontRole.UI, 13, QFont.Weight.Bold)
             header.setAlignment(Qt.AlignmentFlag.AlignRight)
             grid.addWidget(header, 0, col)
             grid.setColumnMinimumWidth(col, 80)

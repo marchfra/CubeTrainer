@@ -34,6 +34,7 @@ from cubetrainer.ui.case_images import case_pixmap
 from cubetrainer.ui.dropdown import Dropdown
 from cubetrainer.ui.notation_dialog import NotationDialog
 from cubetrainer.ui.sizing import reserve_width
+from cubetrainer.ui.theme import FontRole, set_theme_font, theme_font
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -225,27 +226,29 @@ class CaseList(QWidget):
 
         self._grid: QGridLayout = QGridLayout(self)
         self._grid.setHorizontalSpacing(24)
-        bold = QFont()
-        bold.setBold(True)
         for col, title in enumerate(_COLUMN_TITLES):
             header = QLabel(title)
-            header.setFont(bold)
+            set_theme_font(header, FontRole.UI, 13, QFont.Weight.Bold)
             self._grid.addWidget(header, 0, col)
         shown = customize(case_set, self.customizations)
         for row, case in enumerate(shown.cases, start=1):
-            self._add_row(row, case, bold)
+            self._add_row(row, case)
         self._grid.setColumnStretch(2, 1)
-        for column, width in _column_widths(bold, QFont()).items():
+        # Measured in the theme's fonts, the ones the labels use.
+        widths = _column_widths(
+            theme_font(FontRole.UI, 13, QFont.Weight.Bold),
+            theme_font(FontRole.UI, 13),
+        )
+        for column, width in widths.items():
             self._grid.setColumnMinimumWidth(column, width)
         self.refresh_times()
 
-    def _add_row(self, row: int, case: Case, bold: QFont) -> None:
+    def _add_row(self, row: int, case: Case) -> None:
         """Add one case's widgets to the grid.
 
         Args:
             row: Grid row.
             case: The case, with the user's changes.
-            bold: Font for the case name.
 
         """
         image = CaseImage(case, self.statuses[case.id])
@@ -254,19 +257,20 @@ class CaseList(QWidget):
         self._grid.addWidget(image, row, 0)
 
         name = QLabel(case.name)
-        name.setFont(bold)
+        set_theme_font(name, FontRole.UI, 13, QFont.Weight.Bold)
         self._grid.addWidget(name, row, 1)
         alg = QLabel(case.alg)
-        alg_font = QFont()
-        alg_font.setPointSize(15)
-        alg.setFont(alg_font)
+        set_theme_font(alg, FontRole.UI, 15)
         alg.setWordWrap(True)
         alg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.alg_labels[case.id] = alg
         self._grid.addWidget(alg, row, 2)
-        self._grid.addWidget(QLabel(case.group), row, 3)
+        group = QLabel(case.group)
+        set_theme_font(group, FontRole.UI, 13)
+        self._grid.addWidget(group, row, 3)
         for col, labels in ((4, self.best_labels), (5, self.mean_labels)):
             label = QLabel()
+            set_theme_font(label, FontRole.UI, 13)
             label.setAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
             )

@@ -8,19 +8,27 @@ Built with Python and PySide6.
 
 **Look**
 
-- The *Calm* theme: soft rounded panels on a near-black background in dark mode
-  (light grey in light mode), one violet accent for highlights like best times.
-  It follows the system's light/dark mode, switching live.
-- Fonts: Geist for the interface and the times (with fixed-width digits),
-  Geist Mono for scrambles and moves. Both are bundled with the app (SIL Open Font
+- Three themes, chosen in **Settings** (⌘, or *Settings…* in the cog menu), with
+  a live preview; the choice is remembered:
+  - *Calm* (the default): soft rounded panels on a near-black (or light grey)
+    background, one violet accent; Geist and Geist Mono.
+  - *Clean*: like a Mac app: a toolbar strip and tinted sidebars (the solves and
+    the per-case table) separated by hairlines, flat panels, the system font,
+    system blue and a thin timer.
+  - *Bold*: Space Grotesk and Space Mono, soft borderless panels, and the timer as
+    a big card in the accent colour that turns red while you hold and green when
+    it's ready.
+- Light or dark mode: the system's (switching live), or always light or dark.
+- Each theme uses a font with fixed-width digits for times, and a fixed-width
+  font for scrambles and moves. The fonts are bundled with the app (SIL Open Font
   License, in `src/cubetrainer/ui/fonts/`).
 - Every control is themed: buttons, tabs, tables, menus, checkboxes, radio
   buttons, number fields. Destructive buttons (e.g. *Delete* in the solve dialog)
   are red and never the default, so Return never deletes.
-- Charts use the theme's colours: the violet accent, amber and teal, checked for
-  readability and colour-blind separation against both backgrounds.
-- Themes are small sets of named colours and fonts (`ui/theme.py`); the style
-  sheet is generated from them, so another theme can be added later.
+- Charts use each theme's colours (its accent, plus two contrasting hues),
+  checked for readability and colour-blind separation against its backgrounds.
+- Themes are small sets of named colours, fonts and traits (`ui/theme.py`); the
+  style sheet is generated from them.
 - Quick to open: the Learn and Stats tabs are built the first time you open them,
   scipy loads only when the Stats tab fits a curve, and the time graph (and
   matplotlib) fill in just after the window appears.
@@ -57,6 +65,7 @@ registered, so it's always complete.
 |---|---|
 | ⌘1 / ⌘2 / ⌘3 | Mark the last solve OK / +2 / DNF |
 | ⌘Z | Delete the last solve (asks first) |
+| ⌘, | Settings: theme, light or dark mode |
 | → | Trainer only: reveal the next hint step |
 | M | Trainer only: flag the solve in progress (or the last one) as a mistake (the *Mistake* button turns red) |
 
@@ -241,5 +250,8 @@ A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
 
 ## License
 
-[MIT](LICENSE). The bundled Geist and Geist Mono fonts are © Vercel, under the
-[SIL Open Font License](src/cubetrainer/ui/fonts/OFL.txt).
+[MIT](LICENSE). The bundled fonts are under the SIL Open Font License: Geist and
+Geist Mono © Vercel ([licence](src/cubetrainer/ui/fonts/OFL-Geist.txt)), Space
+Grotesk © The Space Grotesk Project Authors
+([licence](src/cubetrainer/ui/fonts/OFL-SpaceGrotesk.txt)) and Space Mono
+© The Space Mono Project Authors ([licence](src/cubetrainer/ui/fonts/OFL-SpaceMono.txt)).

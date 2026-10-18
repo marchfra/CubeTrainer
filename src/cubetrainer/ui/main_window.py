@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, override
 
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
     QMainWindow,
     QStackedWidget,
     QTabWidget,
@@ -20,6 +23,7 @@ from cubetrainer.db import (
     StoredTrainerPrefs,
     trainer_session_kind,
 )
+from cubetrainer.ui.settings_dialog import SettingsDialog
 from cubetrainer.ui.timer_page import TimerPage
 from cubetrainer.ui.trainer_page import TrainerPage
 
@@ -90,6 +94,8 @@ class MainWindow(QMainWindow):
         timer_stack: The Timer tab: the full timer or one of the trainers.
         timer_page: The full-solve timer page.
         trainer_pages: Trainer pages created so far, keyed by set id.
+        settings_action: Opens the Settings window (⌘,).
+        run_dialog: Runs a dialog and returns its result; replaceable in tests.
         learn_page: The case list shown in the Learn tab (built when first needed).
         stats_page: The statistics shown in the Stats tab (built when first
             needed).
@@ -123,6 +129,18 @@ class MainWindow(QMainWindow):
         self._stats: LazyPage[StatsPage] = LazyPage(self._make_stats_page)
         self.tabs.addTab(self._stats, TAB_TITLES[2])
         self.setCentralWidget(self.tabs)
+        self.timer_page.settings_requested.connect(self.show_settings)
+        self.run_dialog: Callable[[QDialog], int] = lambda d: d.exec()
+
+        # ⌘, opens Settings; on macOS the action moves to the app menu by itself.
+        self.settings_action: QAction = QAction("Settings…", self)
+        self.settings_action.setMenuRole(QAction.MenuRole.PreferencesRole)
+        self.settings_action.setShortcut(QKeySequence.StandardKey.Preferences)
+        self.settings_action.triggered.connect(self.show_settings)
+        view = self.menuBar().addMenu("View")
+        view.addAction(self.settings_action)
+        shortcuts = view.addAction("Keyboard Shortcuts")
+        shortcuts.triggered.connect(self.show_shortcuts)
 
     @property
     def learn_page(self) -> LearnPage:
@@ -175,10 +193,25 @@ class MainWindow(QMainWindow):
                 prefs=StoredTrainerPrefs(self._db, set_id),
             )
             page.back_requested.connect(self.open_timer)
+            page.settings_requested.connect(self.show_settings)
             self.trainer_pages[set_id] = page
             self.timer_stack.addWidget(page)
         self.timer_stack.setCurrentWidget(page)
         self.tabs.setCurrentWidget(self.timer_stack)
+
+    def show_shortcuts(self) -> None:
+        """Show the keyboard shortcuts of the page in the Timer tab."""
+        page = self.timer_stack.currentWidget()
+        if isinstance(page, TimerPage):
+            page.show_shortcuts()
+
+    def show_settings(self) -> None:
+        """Open the Settings window (theme, light or dark mode)."""
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            dialog = SettingsDialog(self._db, app, self)
+            self.run_dialog(dialog)
+            dialog.deleteLater()  # a new one each time: don't keep the old ones
 
     def open_timer(self) -> None:
         """Show the full-solve timer in the Timer tab."""

@@ -18,10 +18,7 @@ from matplotlib.ticker import MaxNLocator, PercentFormatter
 from cubetrainer import stats
 from cubetrainer.fits import MIN_CURVE_SAMPLES, LearningCurve, fit_learning_curve
 from cubetrainer.formatting import format_percent
-from cubetrainer.ui.chart_style import DARK, GraphColors
 from cubetrainer.ui.plot_canvas import (
-    DATA_DARK,
-    DATA_LIGHT,
     PlotWidget,
     style_axes,
     title_axes,
@@ -34,6 +31,7 @@ if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget
 
     from cubetrainer.solves import Solve
+    from cubetrainer.ui.chart_style import GraphColors
 
 #: Height of the learning curve, in logical pixels.
 CURVE_HEIGHT: int = 300
@@ -137,7 +135,7 @@ class LearningCurvePlot(PlotWidget):
             )
             return
         title_axes(axes, f"Learning curve: {self.summary()}", colors)
-        data = DATA_DARK if colors is DARK else DATA_LIGHT
+        data = colors.data
         axes.plot(
             self.numbers,
             self.seconds,

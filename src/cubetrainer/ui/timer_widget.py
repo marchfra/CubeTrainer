@@ -5,8 +5,16 @@ from collections.abc import Callable
 from typing import override
 
 import shiboken6
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QKeyEvent, QResizeEvent
+from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QKeyEvent,
+    QPainter,
+    QPaintEvent,
+    QPalette,
+    QResizeEvent,
+    QShowEvent,
+)
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -20,11 +28,72 @@ from PySide6.QtWidgets import (
 
 from cubetrainer.inspection import inspection_text, warnings_between
 from cubetrainer.timing import TimerMachine, TimerState, format_ms
+from cubetrainer.ui import theme
 from cubetrainer.ui.icon_buttons import CogButton, KeyboardButton
 from cubetrainer.ui.shortcuts import Shortcut
-from cubetrainer.ui.theme import number_font
+from cubetrainer.ui.theme import FontRole, set_theme_font
 
 #: Display colour for each state; an empty string means the default text colour.
+#: Text and icon colour on a timer card.
+CARD_TEXT: str = "#ffffff"
+
+#: Space between a timer card's edge and its corner buttons, in pixels.
+CARD_INSET: int = 12
+
+
+class TimeLabel(QLabel):
+    """The big time, drawn in a colour of its own (the timer's state).
+
+    It paints its text itself: a colour set through the palette or a per-widget
+    style sheet would be undone when a theme switch restyles the app (Qt restores
+    the palette, or font, a widget had earlier).
+
+    Attributes:
+        color: The colour of the time ("" for the app's text colour).
+
+    """
+
+    def __init__(self, text: str, parent: QWidget | None = None) -> None:
+        """Create the label.
+
+        Args:
+            text: The first text.
+            parent: Optional parent widget.
+
+        """
+        super().__init__(text, parent)
+        self.color: str = ""
+
+    def set_color(self, color: str) -> None:
+        """Change the colour of the time.
+
+        Args:
+            color: A colour, or "" for the app's text colour.
+
+        """
+        if color != self.color:
+            self.color = color
+            self.update()
+
+    @override
+    def paintEvent(self, event: QPaintEvent) -> None:
+        """Draw the text in the label's colour, with its font and alignment.
+
+        Args:
+            event: The paint event (unused: the whole label is drawn).
+
+        """
+        del event
+        painter = QPainter(self)
+        try:
+            ink = self.color or self.palette().color(QPalette.ColorRole.WindowText)
+            painter.setPen(QColor(ink))
+            painter.setFont(self.font())
+            painter.drawText(self.contentsRect(), self.alignment(), self.text())
+        finally:
+            painter.end()
+
+
 STATE_COLORS: dict[TimerState, str] = {
     TimerState.IDLE: "",
     TimerState.INSPECTING: "",
@@ -121,11 +190,15 @@ class TimerWidget(QWidget):
         self._clock: Callable[[], int] = clock
         self.machine: TimerMachine = TimerMachine()
         self._warned_up_to_ms: int = -1
+        self._card_color: str = ""  # the timer card's colour now ("" until drawn)
+        self._applying: bool = False  # setting up the card (see changeEvent)
+        self._card_mode: bool | None = None  # the card trait it was set up for
 
-        self.display: QLabel = QLabel(format_ms(0))
+        self.display: TimeLabel = TimeLabel(format_ms(0))
         self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # Fixed-width digits keep the number from jittering while it runs.
-        self.display.setFont(number_font(112, QFont.Weight.Light))
+        # Fixed-width digits keep the number from jittering while it runs; the
+        # weight is the theme's (thin, light or bold).
+        set_theme_font(self.display, FontRole.TIMER, 112)
 
         self.hint: QLabel = QLabel(HINT_TEXT)
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -148,6 +221,7 @@ class TimerWidget(QWidget):
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
+        self._apply_card_mode()  # for the theme in use; again on theme switches
 
     def set_inspection(self, *, enabled: bool, hold: bool = False) -> None:
         """Turn inspection on or off, updating the how-to text.
@@ -188,12 +262,118 @@ class TimerWidget(QWidget):
             self.display.setText(format_ms(self.machine.elapsed_ms(now)))
         if inspected is None:
             self._warned_up_to_ms = -1
-        color = STATE_COLORS[state]
-        self.display.setStyleSheet(f"color: {color};" if color else "")
+        self._paint_state(state)
         if state is TimerState.IDLE or state is TimerState.STOPPED:
             self._refresh_timer.stop()
         else:
             self._refresh_timer.start()
+
+    def _paint_state(self, state: TimerState) -> None:
+        """Show the state: the time's colour, or (timer card themes) the card's.
+
+        Args:
+            state: The timer's state.
+
+        """
+        if theme.CURRENT.timer_card:
+            colors = theme.current_colors()
+            card = {
+                TimerState.HOLDING: colors.danger,
+                TimerState.READY: colors.success,
+            }.get(state, colors.timer_card)
+            if card != self._card_color:
+                self._card_color = card
+                self.update()
+            self.display.set_color(CARD_TEXT)
+            return
+        self.display.set_color(STATE_COLORS[state])
+
+    def _apply_card_mode(self) -> None:
+        """Set up (or undo) the timer card, for the theme in use.
+
+        On a card, text and icons are white and the corner buttons sit inside its
+        padding.
+        """
+        card = theme.CURRENT.timer_card
+        self._card_mode = card
+        self._card_color = ""
+        # Style sheet rules colour it (#muted, or #onCard on a card), not a
+        # per-widget sheet: re-applying one of those resets fonts to old ones.
+        self.hint.setObjectName("onCard" if card else "muted")
+        self.hint.style().unpolish(self.hint)
+        self.hint.style().polish(self.hint)
+        for button in (self.shortcuts_button, self.options_button):
+            button.set_on_card(on_card=card)
+        self._place_corner_buttons()
+        self.refresh()
+        self.update()
+
+    @override
+    def changeEvent(self, event: QEvent) -> None:
+        """Follow theme switches (they change the app's style sheet).
+
+        Args:
+            event: The change event.
+
+        """
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.PaletteChange:
+            self._card_color = ""  # light/dark switch: pick the card colour again
+            self.update()
+        if event.type() == QEvent.Type.StyleChange and not self._applying:
+            self._applying = True
+            try:
+                self._apply_card_mode()
+            finally:
+                self._applying = False
+
+    def _sync_card_mode(self) -> None:
+        """Set the card up again if the theme's card trait changed meanwhile.
+
+        A hidden timer (e.g. a trainer's, behind the full timer) may miss the
+        restyle notice of a theme switch; it catches up when shown or painted.
+        """
+        if self._card_mode is not theme.CURRENT.timer_card and not self._applying:
+            self._applying = True
+            try:
+                self._apply_card_mode()
+            finally:
+                self._applying = False
+
+    @override
+    def showEvent(self, event: QShowEvent) -> None:
+        """Catch up with theme switches made while hidden.
+
+        Args:
+            event: The show event.
+
+        """
+        super().showEvent(event)
+        self._sync_card_mode()
+
+    @override
+    def paintEvent(self, event: QPaintEvent) -> None:
+        """Draw the timer card (timer card themes only).
+
+        Args:
+            event: The paint event.
+
+        """
+        super().paintEvent(event)
+        self._sync_card_mode()
+        if not theme.CURRENT.timer_card:
+            return
+        if not self._card_color:
+            self._paint_state(self.machine.state)
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(self._card_color))
+            radius = theme.CURRENT.radius + 10
+            painter.drawRoundedRect(QRectF(self.rect()), radius, radius)
+        finally:
+            painter.end()
 
     def _should_capture(self) -> bool:
         """Decide whether keyboard events should go to the timer.
@@ -243,11 +423,19 @@ class TimerWidget(QWidget):
 
         """
         super().resizeEvent(event)
-        right = self.width()
+        self._place_corner_buttons()
+
+    def _place_corner_buttons(self) -> None:
+        """Put the options and shortcuts buttons in the bottom-right corner.
+
+        On a timer card they sit inside its rounded corner.
+        """
+        inset = CARD_INSET if theme.CURRENT.timer_card else 0
+        right = self.width() - inset
         for button in (self.shortcuts_button, self.options_button):
             size = button.sizeHint()
             right -= size.width()
-            button.move(right, self.height() - size.height())
+            button.move(right, self.height() - size.height() - inset)
 
     def _handle_key(self, event: QKeyEvent) -> bool:
         """Apply a captured key press or release to the timer.

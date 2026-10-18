@@ -71,7 +71,8 @@ def test_link_lists_every_registered_shortcut(qtbot: QtBot, *, trainer: bool) ->
 
     dialog = shown_dialog(page)
 
-    assert list(dialog.rows) == ["Timer", page.title.text()]
+    assert list(dialog.rows) == ["Timer", page.title.text(), "App"]
+    assert dialog.rows["App"] == [("⌘,", "Settings: theme, light or dark mode")]
     assert [key for key, _ in dialog.rows["Timer"]] == [
         key_label(s.keys) for s in TIMER_KEYS
     ]
