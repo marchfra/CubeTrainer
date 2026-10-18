@@ -18,6 +18,7 @@ from matplotlib.ticker import MaxNLocator, PercentFormatter
 from cubetrainer import stats
 from cubetrainer.fits import MIN_CURVE_SAMPLES, LearningCurve, fit_learning_curve
 from cubetrainer.formatting import format_percent
+from cubetrainer.ui.chart_style import DARK, GraphColors
 from cubetrainer.ui.plot_canvas import (
     DATA_DARK,
     DATA_LIGHT,
@@ -25,7 +26,6 @@ from cubetrainer.ui.plot_canvas import (
     style_axes,
     title_axes,
 )
-from cubetrainer.ui.time_graph import DARK, GraphColors
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence

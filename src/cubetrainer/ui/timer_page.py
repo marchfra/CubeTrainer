@@ -5,11 +5,12 @@ Solves list on the left; scramble bar and big timer on the right.
 
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import numpy as np
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QAction, QFont, QKeySequence, QShortcut
+import shiboken6
+from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtGui import QAction, QFont, QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -30,17 +31,18 @@ from cubetrainer.settings import MemorySettings, Settings, get_flag, set_flag
 from cubetrainer.solves import Penalty, Solve, SolveList
 from cubetrainer.sound import InspectionAudio
 from cubetrainer.ui.case_images import CaseInfo
+from cubetrainer.ui.chart_style import GRAPH_HEIGHT
 from cubetrainer.ui.dropdown import Dropdown
 from cubetrainer.ui.icon_buttons import MoreButton
 from cubetrainer.ui.scramble_bar import ScrambleBar
 from cubetrainer.ui.shortcuts import Shortcut, ShortcutsDialog
 from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.solves_panel import TIMER_LAYOUT, PanelLayout, SolvesPanel
-from cubetrainer.ui.time_graph import TimeGraph
 from cubetrainer.ui.timer_widget import TIMER_KEYS, TimerWidget
 
 if TYPE_CHECKING:
     from cubetrainer.ui.icon_buttons import CogButton
+    from cubetrainer.ui.time_graph import TimeGraph
 
 #: Keyboard shortcut for each penalty on the last solve. "Ctrl" is Cmd on macOS.
 PENALTY_SHORTCUTS: dict[Penalty, str] = {
@@ -145,7 +147,8 @@ class TimerPage(QWidget):
         SETTINGS_PREFIX: Start of this page's setting names.
         INSPECTION_DEFAULT: Whether inspection is on until the user changes it.
         SHOW_GRAPH: Whether the page has a time graph under the timer.
-        time_graph: The time graph, or None on pages without one.
+        time_graph: The time graph; None on pages without one, and until the page
+            is first shown (it's built just after, so the window opens sooner).
 
     """
 
@@ -218,10 +221,17 @@ class TimerPage(QWidget):
         self.timer.shortcuts_button.clicked.connect(self.show_shortcuts)
         self.center_column: QVBoxLayout = QVBoxLayout()
         self.center_column.addWidget(self.timer, stretch=1)
+        # The graph is built just after the page first appears (see showEvent):
+        # it needs matplotlib, which takes a while to load, and the window
+        # shouldn't wait for it. Its space is kept meanwhile, so nothing moves.
         self.time_graph: TimeGraph | None = None
+        self._graph_slot: QWidget | None = None
         if self.SHOW_GRAPH:
-            self.time_graph = TimeGraph(self.solves)
-            self.center_column.addWidget(self.time_graph)
+            self._graph_slot = QWidget(self)
+            self._graph_slot.setFixedHeight(GRAPH_HEIGHT)
+            slot_layout = QVBoxLayout(self._graph_slot)
+            slot_layout.setContentsMargins(0, 0, 0, 0)
+            self.center_column.addWidget(self._graph_slot)
         self.grid: QGridLayout = QGridLayout(self)
         # The top row is the header: the scramble in the middle, over the timer.
         self.grid.addLayout(self.header_left, 0, 0)
@@ -246,6 +256,54 @@ class TimerPage(QWidget):
             self.delete_last,
             "Delete the last solve (asks first)",
         )
+
+    @override
+    def showEvent(self, event: QShowEvent) -> None:
+        """Build the time graph just after the page first appears.
+
+        Args:
+            event: The show event.
+
+        """
+        super().showEvent(event)
+        if self._graph_slot is not None and self.time_graph is None:
+            QTimer.singleShot(0, self, self._build_time_graph_if_open)
+
+    def _build_time_graph_if_open(self) -> None:
+        """Build the graph, unless the page was hidden or closed meanwhile.
+
+        A hidden page builds it the next time it's shown, and a closed one may be
+        in the middle of being deleted.
+        """
+        if not shiboken6.isValid(self):
+            return
+        # Holding the window keeps it (and this page) from being garbage-collected
+        # mid-build when nothing else refers to it any more.
+        window = self.window()
+        if window.isVisible() and self.isVisible():
+            self.build_time_graph()
+
+    def build_time_graph(self) -> None:
+        """Create the time graph in its reserved space (once).
+
+        Does nothing if the page was closed (and its space deleted) meanwhile.
+        """
+        if self._graph_slot is None or self.time_graph is not None:
+            return
+        # Imported here: matplotlib is slow to load (see showEvent). Loading it can
+        # let Qt run pending events, the page's deletion included, so the space is
+        # checked only afterwards.
+        from cubetrainer.ui.time_graph import TimeGraph  # noqa: PLC0415
+
+        slot = self._graph_slot
+        if not (shiboken6.isValid(self) and shiboken6.isValid(slot)):
+            return
+        graph = TimeGraph(self.solves, slot)
+        layout = slot.layout()
+        if not shiboken6.isValid(slot) or layout is None:
+            return  # closed while the graph was being made
+        self.time_graph = graph
+        layout.addWidget(graph)
 
     def _build_left_column(self) -> None:
         """Fill the body's left column: session button, statistics, solves table."""

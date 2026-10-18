@@ -7,8 +7,10 @@ from pytestqt.qtbot import QtBot
 
 from cubetrainer.db import Database
 from cubetrainer.solves import Penalty, Solve, SolveList
+from cubetrainer.ui.chart_style import DARK, GRAPH_HEIGHT, LIGHT
 from cubetrainer.ui.main_window import MainWindow
-from cubetrainer.ui.time_graph import DARK, LIGHT, SERIES_NAMES, TimeGraph
+from cubetrainer.ui.time_graph import SERIES_NAMES, TimeGraph
+from cubetrainer.ui.timer_page import TimerPage
 from tests.helpers import FakeClock, do_solve
 
 
@@ -106,6 +108,7 @@ def test_timer_page_graph_follows_solves_and_sessions(
     window.show()
     page = window.timer_page
     page.timer._clock = clock
+    qtbot.waitUntil(lambda: page.time_graph is not None)  # built just after showing
     assert page.time_graph is not None
 
     do_solve(qtbot, page, clock, 9_000)
@@ -118,3 +121,15 @@ def test_timer_page_graph_follows_solves_and_sessions(
 
     window.open_trainer("pll")
     assert window.trainer_pages["pll"].time_graph is None
+
+
+def test_window_opens_before_the_graph_is_built(qtbot: QtBot) -> None:
+    """The graph (and matplotlib) come just after the page appears, in its space."""
+    page = TimerPage()
+    qtbot.addWidget(page)
+    assert page.time_graph is None  # not built before the page is shown
+
+    page.show()
+    qtbot.waitUntil(lambda: page.time_graph is not None)
+    assert page.time_graph is not None
+    assert page.time_graph.height() == GRAPH_HEIGHT

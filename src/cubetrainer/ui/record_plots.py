@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget
 
     from cubetrainer.solves import Solve
-    from cubetrainer.ui.time_graph import GraphColors
+    from cubetrainer.ui.chart_style import GraphColors
 
 #: Height of the plot, in logical pixels.
 RECORD_PLOTS_HEIGHT: int = 320

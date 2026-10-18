@@ -17,8 +17,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
-from scipy import stats as sps
-from scipy.optimize import curve_fit
 
 #: Fewest finished solves worth fitting a distribution to.
 MIN_FIT_SAMPLES: int = 10
@@ -60,6 +58,10 @@ def fit_ex_gaussian(seconds: Sequence[float] | np.ndarray) -> ExGaussianFit | No
     data = np.asarray(seconds, dtype=float)
     if data.size < MIN_FIT_SAMPLES or np.ptp(data) == 0:
         return None
+    # Imported here: scipy takes about a second to load, and only the Stats tab
+    # fits anything, so the app starts without it.
+    from scipy import stats as sps  # noqa: PLC0415
+
     # scipy's exponnorm uses (K, loc, scale): μ = loc, σ = scale, τ = K·scale.
     k, loc, scale = (float(p) for p in sps.exponnorm.fit(data))
     frozen = sps.exponnorm(k, loc, scale)
@@ -150,6 +152,8 @@ def fit_learning_curve(seconds: Sequence[float] | np.ndarray) -> LearningCurve |
     if data.size < MIN_CURVE_SAMPLES:
         return None
     numbers = np.arange(data.size, dtype=float)
+    from scipy.optimize import curve_fit  # noqa: PLC0415 - slow to load, see above
+
     head, tail = float(np.median(data[:10])), float(np.median(data[-10:]))
     guess = (head, min(head, tail), data.size / 3)
     bounds = ([0.0, 0.0, 1.0], [np.inf, np.inf, 50.0 * data.size])

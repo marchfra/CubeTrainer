@@ -8,6 +8,7 @@ as mistakes, like the trainer's own tables.
 from dataclasses import dataclass
 from typing import override
 
+import shiboken6
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QShowEvent
 from PySide6.QtWidgets import (
@@ -464,6 +465,20 @@ class StatsPage(QWidget):
         self.case_id = case_id
         self.refresh()
 
+    def _refresh_if_open(self) -> None:
+        """Refresh, unless the page was hidden or closed before this deferred call.
+
+        A hidden page refreshes the next time it's shown anyway, and a closed one
+        may be in the middle of being deleted.
+        """
+        if not shiboken6.isValid(self):
+            return
+        # Holding the window keeps it (and this page) from being garbage-collected
+        # mid-refresh when nothing else refers to it any more.
+        window = self.window()
+        if window.isVisible() and self.isVisible():
+            self.refresh()
+
     def refresh(self) -> None:
         """Reload the selected solves and show their statistics.
 
@@ -568,4 +583,4 @@ class StatsPage(QWidget):
 
         """
         super().showEvent(event)
-        QTimer.singleShot(0, self, self.refresh)
+        QTimer.singleShot(0, self, self._refresh_if_open)

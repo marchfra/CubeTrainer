@@ -9,7 +9,6 @@ solve.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, override
 
 from matplotlib.backend_bases import Event, MouseEvent
@@ -17,81 +16,22 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from cubetrainer import stats
 from cubetrainer.formatting import format_average, format_solve
+from cubetrainer.ui.chart_style import GRAPH_HEIGHT, GraphColors, current_colors
 
 if TYPE_CHECKING:
     from matplotlib.lines import Line2D
 
     from cubetrainer.solves import SolveList
 
-#: Height of the graph, in logical pixels.
-GRAPH_HEIGHT: int = 190
-
 #: Fewest solves worth drawing a line for.
 _MIN_SOLVES: int = 2
 
-
-@dataclass(frozen=True, slots=True)
-class GraphColors:
-    """The colours of one appearance (light or dark).
-
-    Attributes:
-        surface: Typical window colour the palette was validated against (the graph
-            draws on the actual window colour).
-        series: Line colours for single, ao5 and ao12 (categorical slots 1-3).
-        text: Primary ink, for labels.
-        muted: Muted ink, for axes and tick labels.
-        grid: Gridline hairlines.
-        baseline: Axis lines.
-
-    """
-
-    surface: str
-    series: tuple[str, str, str]
-    text: str
-    muted: str
-    grid: str
-    baseline: str
-
-
-# The Calm theme's colours: the first series is its violet accent, then amber and
-# teal; validated (lightness, chroma, colour-blind separation, contrast) against
-# its backgrounds, #f3f4f7 light and #0e1014 dark. Neutrals are its greys.
-LIGHT: GraphColors = GraphColors(
-    surface="#f3f4f7",
-    series=("#6b5cf0", "#d97a2b", "#0f9d8f"),
-    text="#3d4250",
-    muted="#6a7184",
-    grid="#e2e5eb",
-    baseline="#cfd3dc",
-)
-
-DARK: GraphColors = GraphColors(
-    surface="#0e1014",
-    series=("#8c7dff", "#c8753a", "#22a493"),
-    text="#c3c7d0",
-    muted="#8b92a3",
-    grid="#1e222b",
-    baseline="#343a48",
-)
-
 #: Names of the three lines, in slot order.
 SERIES_NAMES: tuple[str, str, str] = ("single", "ao5", "ao12")
-
-
-def current_colors() -> GraphColors:
-    """Return the colours for the app's current appearance.
-
-    Returns:
-        ``DARK`` when the system uses dark mode, else ``LIGHT``.
-
-    """
-    hints = QGuiApplication.styleHints()
-    return DARK if hints.colorScheme() == Qt.ColorScheme.Dark else LIGHT
 
 
 def _seconds(value: float | None) -> float:

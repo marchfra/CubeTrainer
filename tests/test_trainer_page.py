@@ -15,7 +15,7 @@ from cubetrainer.solves import Solve
 from cubetrainer.timing import TimerState
 from cubetrainer.ui.case_images import case_pixmap
 from cubetrainer.ui.filter_dialog import FilterDialog
-from cubetrainer.ui.main_window import MainWindow
+from cubetrainer.ui.main_window import TAB_TITLES, MainWindow
 from cubetrainer.ui.solve_dialog import SolveDialog
 from cubetrainer.ui.trainer_page import (
     DIALOG_IMAGE_SIZE,
@@ -128,7 +128,7 @@ def test_train_button_opens_trainer_and_back_returns(qtbot: QtBot) -> None:
     window = MainWindow(Database(":memory:"))
     qtbot.addWidget(window)
     window.show()
-    window.tabs.setCurrentWidget(window.learn_page)
+    window.tabs.setCurrentIndex(TAB_TITLES.index("Learn"))
     window.learn_page.select_set("pll")
 
     assert window.learn_page.train_button.text() == "Train PLL"
@@ -399,7 +399,7 @@ def test_learn_page_shows_trainer_times(qtbot: QtBot, clock: FakeClock) -> None:
     trainer.toggle_mistake()  # the 9.00 is a mistake: left out
 
     window.learn_page.select_set("pll")
-    window.tabs.setCurrentWidget(window.learn_page)
+    window.tabs.setCurrentIndex(TAB_TITLES.index("Learn"))
 
     cards = window.learn_page.case_list
     assert cards.best_labels[case.id].text() == "1.50"

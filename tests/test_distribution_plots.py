@@ -8,8 +8,8 @@ from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QWheelEvent
 from pytestqt.qtbot import QtBot
 
+from cubetrainer.ui.chart_style import DARK, LIGHT
 from cubetrainer.ui.distribution_plots import HistogramPlot
-from cubetrainer.ui.time_graph import DARK, LIGHT
 
 
 def make_plot(qtbot: QtBot, values: list[float]) -> HistogramPlot:

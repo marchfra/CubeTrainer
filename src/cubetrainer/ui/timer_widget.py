@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable
 from typing import override
 
+import shiboken6
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QKeyEvent, QResizeEvent
 from PySide6.QtWidgets import (
@@ -220,6 +221,10 @@ class TimerWidget(QWidget):
             True if the event was consumed by the timer.
 
         """
+        if not shiboken6.isValid(self):
+            # A timer whose window is being destroyed may still be asked while its
+            # filter is removed; it has nothing to say any more.
+            return False
         if (
             isinstance(event, QKeyEvent)
             and event.type() in {QEvent.Type.KeyPress, QEvent.Type.KeyRelease}

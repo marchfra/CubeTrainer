@@ -21,6 +21,9 @@ Built with Python and PySide6.
   readability and colour-blind separation against both backgrounds.
 - Themes are small sets of named colours and fonts (`ui/theme.py`); the style
   sheet is generated from them, so another theme can be added later.
+- Quick to open: the Learn and Stats tabs are built the first time you open them,
+  scipy loads only when the Stats tab fits a curve, and the time graph (and
+  matplotlib) fill in just after the window appears.
 
 **Timer tab** (full solves)
 

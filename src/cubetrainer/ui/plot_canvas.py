@@ -11,13 +11,13 @@ from matplotlib.ticker import FuncFormatter, MaxNLocator
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QHBoxLayout, QWidget
 
-from cubetrainer.ui.time_graph import current_colors
+from cubetrainer.ui.chart_style import current_colors
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from PySide6.QtGui import QResizeEvent, QWheelEvent
 
-    from cubetrainer.ui.time_graph import GraphColors
+    from cubetrainer.ui.chart_style import GraphColors
 
 
 #: Colour of the observed data (a neutral grey, cool like the theme's), for light

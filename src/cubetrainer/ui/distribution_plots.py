@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, override
 import numpy as np
 
 from cubetrainer.fits import MIN_FIT_SAMPLES, ExGaussianFit, fit_ex_gaussian
+from cubetrainer.ui.chart_style import DARK, GraphColors
 from cubetrainer.ui.plot_canvas import (
     DATA_DARK,
     DATA_LIGHT,
@@ -21,7 +22,6 @@ from cubetrainer.ui.plot_canvas import (
     style_axes,
     title_axes,
 )
-from cubetrainer.ui.time_graph import DARK, GraphColors
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
