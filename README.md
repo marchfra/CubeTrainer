@@ -209,25 +209,30 @@ to hundredths and averages and means are rounded to the nearest hundredth.
 uv run cubetrainer
 ```
 
-### As a Mac app
+### As a standalone app
 
-Build `CubeTrainer.app` (about 250 MB, about a minute) and put it in
-`/Applications`, where Spotlight, Launchpad and the Dock find it:
+Build CubeTrainer as an app that runs without Python (about 250 MB, about a
+minute), and install it, from the project folder:
 
 ```shell
-uv run python app_bundle/build_app.py --install
+uv run python -m app_bundle.build_app --install
 ```
 
-Without `--install` it's only built, in `dist/`. The app contains its own Python
-and libraries, so it runs without uv or a terminal, and it uses the same data
-folder as `uv run cubetrainer`. It holds a copy of the code: rebuild after
-changes. The first launch takes a little longer (macOS checks the app, and
-matplotlib builds its font cache once). The app isn't signed with an Apple
-developer certificate; built on this Mac it opens normally, but a copy downloaded
-from elsewhere would need right-click → Open the first time.
+(With plain Python: `pip install ".[app]"`, then `python -m app_bundle.build_app
+--install`.) Without `--install` it's only built, in `dist/`; `--uninstall`
+removes what `--install` added. Where it goes:
 
-`app_bundle/` holds the build: the PyInstaller recipe (`CubeTrainer.spec`), the
-launcher, and the icon (`make_icon.py` draws it, as `CubeTrainer.icns`).
+- macOS: `/Applications/CubeTrainer.app` (Spotlight, Launchpad and the Dock find
+  it);
+- Windows: `%LOCALAPPDATA%\Programs\CubeTrainer`, with a Start Menu shortcut;
+- Linux: `~/.local/share/cubetrainer`, with a launcher entry and icon.
+
+Each system builds its own app; Windows and Linux builds are untested. The app
+uses the same data folder as `cubetrainer`, and holds a copy of the code: rebuild
+after changes.
+
+Installing also prepares the app's font cache, which can take half a minute once,
+so the app itself starts quickly; `--uninstall` removes that cache too.
 
 ## Data
 

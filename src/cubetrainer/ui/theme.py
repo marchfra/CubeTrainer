@@ -99,6 +99,9 @@ class Theme:
             system's).
         mono_font: Family of scrambles and moves (must be fixed-width: hidden
             moves are masked with dots of the same width).
+        mono_fallbacks: Families to try, in order, when ``mono_font`` isn't
+            installed (e.g. system fonts of other systems); the bundled
+            ``Geist Mono`` comes last.
         radius: Corner radius of panels, in pixels (controls use a smaller one).
         timer_weight: Weight of the big time.
         flat: Panels without boxes: tables and cards on the background, separated
@@ -118,6 +121,7 @@ class Theme:
     timer_weight: QFont.Weight = QFont.Weight.Light
     flat: bool = False
     timer_card: bool = False
+    mono_fallbacks: tuple[str, ...] = ()
 
 
 #: Soft panels on a near-black (or light grey) ground, one violet accent.
@@ -217,6 +221,8 @@ CLEAN: Theme = Theme(
     ),
     ui_font=SYSTEM_FONT,
     mono_font="Menlo",
+    # Menlo is macOS's: Windows and Linux have their own fixed-width fonts.
+    mono_fallbacks=("Consolas", "DejaVu Sans Mono", "Liberation Mono"),
     radius=6,
     timer_weight=QFont.Weight.Thin,
     flat=True,
@@ -336,6 +342,29 @@ def _family(name: str) -> str:
     return name
 
 
+#: The fixed-width font that ships with the app, the last resort.
+BUNDLED_MONO: str = "Geist Mono"
+
+
+def mono_family(theme: Theme | None = None) -> str:
+    """Return the first of a theme's fixed-width fonts that is installed.
+
+    Args:
+        theme: The theme; the one in use if omitted.
+
+    Returns:
+        The family: ``mono_font``, else the first installed fallback, else the
+        bundled ``Geist Mono``.
+
+    """
+    theme = theme or CURRENT
+    installed = set(QFontDatabase.families())
+    for family in (theme.mono_font, *theme.mono_fallbacks):
+        if family in installed:
+            return family
+    return BUNDLED_MONO
+
+
 class FontRole(StrEnum):
     """What a font is for; each theme says which family and weight that means."""
 
@@ -361,8 +390,8 @@ def theme_font(
         The font. Times get tabular figures, so a running time doesn't jitter.
 
     """
-    family = CURRENT.mono_font if role is FontRole.MONO else CURRENT.ui_font
-    font = QFont(_family(family))
+    family = mono_family() if role is FontRole.MONO else _family(CURRENT.ui_font)
+    font = QFont(family)
     font.setPointSizeF(point_size)
     font.setWeight(CURRENT.timer_weight if role is FontRole.TIMER else weight)
     if role in {FontRole.NUMBER, FontRole.TIMER}:

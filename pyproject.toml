@@ -21,6 +21,11 @@ dependencies = [
 [project.scripts]
 cubetrainer = "cubetrainer.app:main"
 
+[project.optional-dependencies]
+app = [
+    "pyinstaller>=6.22.3",
+]
+
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
