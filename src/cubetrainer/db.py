@@ -121,7 +121,7 @@ def default_db_path() -> Path:
     elif sys.platform == "darwin":
         directory = Path.home() / "Library" / "Application Support" / APP_DIR_NAME
     else:
-        directory = platformdirs.user_data_path(APP_DIR_NAME)
+        directory = platformdirs.user_data_path(APP_DIR_NAME, appauthor=False)
     return directory / DB_FILENAME
 
 

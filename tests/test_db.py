@@ -179,14 +179,18 @@ def test_other_platforms_use_platformdirs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Elsewhere the platform's user data directory is used (here, via XDG)."""
+    r"""Elsewhere the platform's user data directory is used (here, via XDG).
+
+    Without an author folder: on Windows it's ``%LOCALAPPDATA%\CubeTrainer``.
+    """
     monkeypatch.delenv(DATA_DIR_ENV, raising=False)
     monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setattr(
-        platformdirs,
-        "user_data_path",
-        lambda name: tmp_path / "share" / name,
-    )
+
+    def user_data_path(name: str, *, appauthor: bool) -> Path:
+        assert appauthor is False
+        return tmp_path / "share" / name
+
+    monkeypatch.setattr(platformdirs, "user_data_path", user_data_path)
 
     assert default_db_path() == tmp_path / "share" / "CubeTrainer" / DB_FILENAME
 

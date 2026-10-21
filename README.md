@@ -3,312 +3,386 @@
 <!--toc:start-->
 
 - [CubeTrainer](#cubetrainer)
-  - [Features](#features)
-  - [Requirements](#requirements)
-  - [Run](#run)
-    - [As a Mac app](#as-a-mac-app)
-  - [Data](#data)
+  - [Install](#install)
+  - [Using CubeTrainer](#using-cubetrainer)
   - [Development](#development)
-    - [Project layout](#project-layout)
-  - [License](#license)
+  - [Licence](#licence)
   <!--toc:end-->
 
-A desktop app for speedcubing practice: a [cstimer](https://cstimer.net)-style
-timer for full solves plus a [jperm](https://jperm.net)-style OLL/PLL algorithm
-trainer. Built with Python and PySide6.
+A desktop app for Rubik's cube practice. It combines a
+[cstimer](https://cstimer.net)-style timer for full solves with a
+[jperm](https://jperm.net)-style trainer for the OLL and PLL algorithms.
 
-## Features
+- **Timer:** WCA inspection with the judge's calls, random-state scrambles,
+  sessions, rolling averages and a time graph.
+- **Trainer:** drills OLL or PLL cases picked from your own selection, with
+  step-by-step hints and mistake tracking.
+- **Learn:** every case of 2-look OLL, 2-look PLL, full OLL and full PLL, with
+  your learning status, your own algorithms and a notation guide.
+- **Stats:** averages, distributions, personal bests over time and a learning
+  curve.
+- Three themes, in light or dark mode.
 
-### Look
+Everything is saved automatically on your computer; nothing is sent anywhere.
 
-- Three themes, chosen in **Settings** (⌘, or _Settings…_ in the cog menu),
-  with a live preview; the choice is remembered:
-  - _Calm_ (the default): soft rounded panels on a near-black (or light grey)
-    background, one violet accent; Geist and Geist Mono.
-  - _Clean_: like a Mac app: a toolbar strip and tinted sidebars (the solves
-    and the per-case table) separated by hairlines, flat panels, the system font,
-    system blue and a thin timer.
-  - _Bold_: Space Grotesk and Space Mono, soft borderless panels, and the timer
-    as a big card in the accent colour that turns red while you hold and green
-    when it's ready.
-- Light or dark mode: the system's (switching live), or always light or dark.
-- Each theme uses a font with fixed-width digits for times, and a fixed-width
-  font for scrambles and moves. The fonts are bundled with the app (SIL Open Font
-  License, in `src/cubetrainer/ui/fonts/`).
-- Every control is themed: buttons, tabs, tables, menus, checkboxes, radio
-  buttons, number fields. Destructive buttons (e.g. _Delete_ in the solve dialog)
-  are red and never the default, so Return never deletes.
-- Charts use each theme's colours (its accent, plus two contrasting hues),
-  checked for readability and colour-blind separation against its backgrounds.
-- Themes are small sets of named colours, fonts and traits (`ui/theme.py`); the
-  style sheet is generated from them.
-- Quick to open: the Learn and Stats tabs are built the first time you open
-  them, scipy loads only when the Stats tab fits a curve, and the time graph (and
-  matplotlib) fill in just after the window appears.
+## Install
 
-### Timer tab (full solves)
+Download the source (the green _Code_ button → _Download ZIP_, or `git clone`),
+open a terminal in its folder, then follow the steps for your system.
 
-- Spacebar timer: hold until the display turns green (0.3 s), release to start,
-  press any key to stop. Modifier keys (e.g. Cmd+Tab) don't stop a solve; Esc
-  cancels a hold.
-- WCA inspection (the ⚙ options in the timer's bottom-right corner, on by
-  default): the first press starts a 15 s countdown (or, with _Hold space to
-  start inspection_, a hold until green does); starting after 15 s is +2, after
-  17 s DNF. Optional beeps at 8 s (one) and 12 s (two), like a judge's calls. Esc
-  cancels inspection.
-- WCA-style random-state scrambles (two-phase solver), with small icon buttons
-  beside them: ‹ previous, › next and copy (a tick confirms the copy). Being
-  icons, they leave the scramble room to stay on one line.
-- Solves table (newest first) with rolling ao5 and ao12, plus a summary of
-  current and best single / ao5 / ao12, solve count and session mean.
-- Click a solve to see its details, change its penalty or delete it.
-- **Time graph** under the timer: singles, ao5 and ao12 over the session (DNFs
-  are gaps). Hover for a crosshair and the values at that solve. Follows the
-  system's light/dark mode.
-- **Sessions**, cstimer-style: the session picker above the list switches
-  between sessions, and the ⋯ button beside it creates, renames or deletes one
-  (deleting asks first and takes its solves with it; the last session can't be
-  deleted). Statistics are per session, and the current session is remembered.
-- Solves are saved automatically and survive restarts.
+You need **Python 3.12 or newer** and a **C compiler** (the scramble solver,
+[kociemba](https://pypi.org/project/kociemba/), is compiled when it's
+installed).
 
-The small keyboard button in the timer's bottom-right corner (next to the ⚙
-options) lists every key the timer and the
-current page react to; the list is generated from the shortcuts as they are
-registered, so it's always complete.
+<details>
+<summary><strong>macOS</strong></summary>
 
-| Shortcut     | Action                                                                                                   |
-| ------------ | -------------------------------------------------------------------------------------------------------- |
-| ⌘1 / ⌘2 / ⌘3 | Mark the last solve OK / +2 / DNF                                                                        |
-| ⌘Z           | Delete the last solve (asks first)                                                                       |
-| ⌘,           | Settings: theme, light or dark mode                                                                      |
-| →            | Trainer only: reveal the next hint step                                                                  |
-| M            | Trainer only: flag the solve in progress (or the last one) as a mistake (the _Mistake_ button turns red) |
+### Requirements
 
-Statistics follow cstimer and the WCA regulations: averages trim 5% (rounded
-up) from each end, a DNF counts as the worst result, single times are truncated
-to hundredths and averages and means are rounded to the nearest hundredth.
+- Python 3.12 or newer, from [python.org](https://www.python.org/downloads/) or
+  Homebrew (`brew install python`). Check with `python3 --version`.
+- Xcode Command Line Tools, for the C compiler:
 
-### Learn tab
+  ```shell
+  xcode-select --install
+  ```
 
-- Four sets, chosen with the _Set_ picker (the tab opens on PLL): 2-look OLL (3
-  edge + 7 corner cases), 2-look PLL (2 corner + 4 edge cases), full OLL (57) and
-  full PLL (21), jperm-style: image, name, default algorithm (grouped into blocks
-  with brackets), group, and best / average trainer times. The OLL numbering is
-  cross-checked in the tests against the SpeedSolving wiki's algorithms.
-- Case images are drawn from the algorithm itself (yellow top, green front).
-  PLL images show the colours and arrows for how the pieces move (a final AUF in
-  the algorithm is ignored); OLL images show which stickers are yellow, the rest
-  grey. 2-look images grey out what their look ignores (the corners when
-  orienting edges, the edges when permuting corners).
-- **Edit** a case to use your own algorithm (checked as you type: it must solve
-  the same case, but may start from another side, e.g. with a `y`, or add U
-  turns), upload your own image, or rotate the image in quarter turns. The
-  generated image follows your algorithm, so it shows the case the way you hold
-  the cube. Your algorithm is used everywhere: list, hints and scrambles.
-- **Notation** (next to _Train_): every move the algorithms can use: face
-  turns, wide moves (`r` or `Rw`), slices (M, E, S) and rotations (x, y, z), each
-  with a one-line description and a picture of the cube with the turned layers in
-  colour and arrows showing which way they go; plus what `'`, `2` and brackets
-  mean. The list is generated from the algorithm parser's own move table, so it
-  always matches what's accepted.
-- Click a case image to cycle its status: unlearned → learning → finished
-  (shown as the image's background colour, and named on hover). Statuses are
-  saved.
+### Install and run
 
-### Trainer (Learn → _Train …_ for the selected set)
+```shell
+python3 -m venv .venv
+source .venv/bin/activate
+pip install .
+cubetrainer
+```
 
-- Opens in the Timer tab (← _Full timer_ goes back). Each scramble sets up a case
-  of the set, with random U turns around it. Whatever the case's algorithm doesn't
-  solve is random, as in a real solve: OLL cases come with a random PLL, the edge
-  look of 2-look OLL with random corners, the corner look of 2-look PLL with random
-  edges. Scrambles are random-state style, so they don't
-  give away the algorithm.
-- **Case filter** (the _N cases · equal_ button): choose groups and learning
-  statuses (a case must match both), and how likely each case is:
+If `python3` is older than 3.12, name the newer one in the first command, e.g.
+`python3.12 -m venv .venv`. Once the environment is active, `python` is the
+right one.
+
+Next time, only activate the environment and start it:
+
+```shell
+source .venv/bin/activate
+cubetrainer
+```
+
+With [uv](https://docs.astral.sh/uv/) instead, a single command installs and
+starts it: `uv run cubetrainer`.
+
+### Build a standalone app (optional)
+
+This makes `CubeTrainer.app`, which runs without Python or a terminal. It takes
+a minute or two and about 250 MB. In the activated environment:
+
+```shell
+pip install ".[app]"
+python -m app_bundle.build_app --install
+```
+
+It goes into `/Applications`, so Spotlight, Launchpad and the Dock find it.
+Installing also prepares the app's font cache once (up to half a minute), so the
+app starts quickly. Without `--install`, the app is only built, into `dist/`.
+
+To remove it:
+
+```shell
+python -m app_bundle.build_app --uninstall
+```
+
+The app keeps a copy of the code: after downloading a newer version, run the
+`--install` command again.
+
+### Your data
+
+`~/Library/Application Support/CubeTrainer/`
+
+</details>
+
+<details>
+<summary><strong>Windows</strong></summary>
+
+### Requirements
+
+- Python 3.12 or newer, from [python.org](https://www.python.org/downloads/)
+  (tick _Add python.exe to PATH_ when installing). Check with `py --version`.
+- Microsoft C++ Build Tools, for the C compiler: install
+  [Build Tools for Visual Studio](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+  and choose _Desktop development with C++_.
+
+### Install and run
+
+In PowerShell:
+
+```powershell
+py -3 -m venv .venv
+.venv\Scripts\activate
+pip install .
+cubetrainer
+```
+
+If PowerShell refuses to run the activation script, allow scripts for your user
+once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
+Next time, only activate the environment and start it:
+
+```powershell
+.venv\Scripts\activate
+cubetrainer
+```
+
+With [uv](https://docs.astral.sh/uv/) instead, a single command installs and
+starts it: `uv run cubetrainer`.
+
+### Build a standalone app (optional)
+
+This makes a CubeTrainer program that runs without Python or a terminal. It
+takes a minute or two and about 250 MB. In the activated environment:
+
+```powershell
+pip install ".[app]"
+python -m app_bundle.build_app --install
+```
+
+It goes into `%LOCALAPPDATA%\Programs\CubeTrainer`, with a CubeTrainer shortcut
+in the Start Menu. Installing also prepares the app's font cache once (up to
+half a minute), so the app starts quickly. Without `--install`, the app is only
+built, into `dist\`.
+
+To remove it:
+
+```powershell
+python -m app_bundle.build_app --uninstall
+```
+
+The app keeps a copy of the code: after downloading a newer version, run the
+`--install` command again.
+
+> [!NOTE]
+> The Windows app build hasn't been tested yet. Please report any problems.
+
+### Your data
+
+`%LOCALAPPDATA%\CubeTrainer\`
+
+</details>
+
+<details>
+<summary><strong>Linux</strong></summary>
+
+### Requirements
+
+- Python 3.12 or newer with its `venv` module. Check with `python3 --version`.
+- A C compiler and the Python headers. For example:
+  - Debian and Ubuntu: `sudo apt install build-essential python3-dev python3-venv`
+  - Fedora: `sudo dnf install gcc python3-devel`
+  - Arch: `sudo pacman -S base-devel`
+
+### Install and run
+
+```shell
+python3 -m venv .venv
+source .venv/bin/activate
+pip install .
+cubetrainer
+```
+
+If `python3` is older than 3.12, name the newer one in the first command, e.g.
+`python3.12 -m venv .venv`. Once the environment is active, `python` is the
+right one.
+
+Next time, only activate the environment and start it:
+
+```shell
+source .venv/bin/activate
+cubetrainer
+```
+
+With [uv](https://docs.astral.sh/uv/) instead, a single command installs and
+starts it: `uv run cubetrainer`.
+
+### Build a standalone app (optional)
+
+This makes a CubeTrainer program that runs without Python or a terminal. It
+takes a minute or two and about 250 MB. In the activated environment:
+
+```shell
+pip install ".[app]"
+python -m app_bundle.build_app --install
+```
+
+It goes into `~/.local/share/cubetrainer`, with a launcher entry and an icon so
+your desktop's app menu lists it. Installing also prepares the app's font cache
+once (up to half a minute), so the app starts quickly. Without `--install`, the
+app is only built, into `dist/`.
+
+To remove it:
+
+```shell
+python -m app_bundle.build_app --uninstall
+```
+
+The app keeps a copy of the code: after downloading a newer version, run the
+`--install` command again.
+
+> [!NOTE]
+> The Linux app build hasn't been tested yet. Please report any problems.
+
+### Your data
+
+`~/.local/share/CubeTrainer/` (or under `$XDG_DATA_HOME`, if you set it)
+
+</details>
+
+The data folder holds your solves, sessions, case statuses, your own algorithms
+and images, and your settings. The installed app and `cubetrainer` share it. To
+keep your times, back up this folder. To use a different folder, for example to
+try things out without touching your real times, set `CUBETRAINER_DATA_DIR`
+before starting:
+
+```shell
+CUBETRAINER_DATA_DIR=~/cubetrainer-test cubetrainer
+```
+
+(In PowerShell: `$env:CUBETRAINER_DATA_DIR = "$HOME\cubetrainer-test"`, then
+`cubetrainer`.)
+
+## Using CubeTrainer
+
+Shortcuts below are written for macOS. On Windows and Linux, use
+<kbd>Ctrl</kbd> where they say <kbd>⌘</kbd>.
+
+### Timer
+
+- Hold <kbd>Space</kbd> until the time turns green, then release to start.
+  Press any key to stop.
+- <kbd>Esc</kbd> cancels a hold.
+- **Inspection** (on by default) follows the WCA rules. The first press of
+  <kbd>Space</kbd> starts a 15-second countdown. Starting after 15 seconds is a
+  +2 penalty, and after 17 seconds a DNF. Beeps at 8 and 12 seconds stand in for
+  the judge's calls. <kbd>Esc</kbd> cancels inspection.
+- Inspection and its beeps are set with the ⚙ button in the timer's corner.
+- The arrows beside the scramble go back to the previous scramble or on to a
+  new one. The copy button copies the scramble.
+- Click a solve in the list to see it, change its penalty or delete it.
+  <kbd>⌘</kbd> <kbd>1</kbd>, <kbd>⌘</kbd> <kbd>2</kbd> and <kbd>⌘</kbd>
+  <kbd>3</kbd> mark the last solve OK, +2 or DNF. <kbd>⌘</kbd> <kbd>Z</kbd>
+  deletes it, after asking.
+- The graph under the timer shows your singles, ao5 and ao12. Hover over it to
+  read the values.
+- **Sessions** keep groups of solves apart, for example one per cube. Pick a
+  session above the solves list, and use the ⋯ button beside it to create,
+  rename or delete one. Statistics are per session.
+
+Averages follow the WCA rules: the best and worst 5% are left out (the best and
+worst solve in an ao5 or ao12), and a DNF counts as the slowest time.
+
+### Learn
+
+- Choose a set with the _Set_ picker: 2-look OLL, 2-look PLL, full OLL or full
+  PLL. Each case shows its picture, name, algorithm, and your best and average
+  trainer times.
+- Click a case's picture to change its status: unlearned → learning → finished.
+  The trainer can use the status to pick cases.
+- **Edit** a case to use your own algorithm, your own picture, or to rotate the
+  picture. Your algorithm is checked as you type: it must solve the same case,
+  but may start from another angle. It's then used everywhere: in the list, the
+  hints and the scrambles.
+- **Notation** explains every move the algorithms use, with a picture of each.
+
+### Trainer
+
+Click _Train …_ in the Learn tab to train the chosen set. The Timer tab switches
+to the trainer, and _← Full timer_ goes back.
+
+- Each scramble sets up one case of the set. The rest of the cube is random, as
+  in a real solve.
+- The **case filter** (the _N cases_ button) chooses which cases come up, by
+  group and status, and how often:
   - _Equal_: every case equally often.
-  - _Realistic_: as often as in real solves. In PLL, H/Na/Nb are 1/72, E/Z 1/36
-    and the rest 1/18; in OLL, 20 is 1/216, 1/21/55/56/57 are 1/108 and the rest
-    1/54; in 2-look sets each case's odds are within its own look.
-  - _Slowest first_: slow cases come up more often. Each case is rated on its
-    last 12 solves across all the set's sessions: the weight is the square of
-    the mean time (mistakes and DNFs left out), times 1 + the share of
-    mistakes. A case twice as slow comes up four times as often. Cases with
-    fewer than 3 timed solves count as the slowest, so new cases get practised.
+  - _Realistic_: as often as in real solves.
+  - _Slowest first_: your slow cases more often, and the ones you make
+    mistakes on. Cases with few solves come up as if they were the slowest.
+- **Hints:** press <kbd>→</kbd> to see the case's picture and the first move of
+  its algorithm. Each further <kbd>→</kbd> shows one more move. Turn the top
+  layer to match the picture first. Hints never stop the timer.
+- **Mistakes:** press <kbd>M</kbd>, or click _Mistake_, when you mess up a solve.
+  During a solve it flags that solve without stopping the timer; afterwards it
+  flags (or unflags) the last solve. Mistakes are left out of your averages.
+- The solves list marks mistakes with ✗ and hint use with 💡. The table on the
+  right shows your count, average, ao5 and mistake rate for every case.
+- Each set's trainer has its own sessions, separate from your full solves. The
+  trainer has its own inspection setting, off by default.
 
-  The button shows the odds in one word (_equal_, _realistic_, _slowest_) and
-  keeps the same width whatever the filter. The filter is saved per set; if
-  status changes leave nothing selected, the trainer falls back to all cases and
-  the button shows _⚠ all N_ (its tooltip explains).
+### Stats
 
-- The solves table has a case column, and the solve dialog shows the case's
-  name and image. The case is recognised from the scramble itself.
-- Trainer solves are kept apart from full solves: each set's trainer has its
-  own sessions, with the same session picker and ⋯ menu. The Learn tab's best/avg
-  come from the set's current trainer session.
-- **Hints:** press → to show the case image and the first move of its
-  algorithm; each further → reveals one more move. The moves start from the case
-  as the image shows it, so turn the U layer to match the image first. Brackets
-  that group an algorithm into blocks, like `(R U R' U')`, are shown but don't
-  count as steps. → works before and during a solve and never stops the timer.
-  The hint card keeps one size: it shows the whole algorithm with the moves not
-  revealed yet masked by faint dots of the same width, so revealing a move never
-  shifts or re-wraps the text. Lines break between bracket groups, never inside
-  one (unless a group is longer than a line). The number of hint steps used is
-  saved with the solve.
-- **Mistakes:** press M (or click _Mistake_, red while flagged) if you messed
-  up. During a solve it flags that solve without stopping the timer; otherwise it
-  toggles the flag of the last solve. The solve dialog has a _Mistake_ checkbox
-  too.
-- The solves table shows flags: ✗ for a mistake, 💡n for n hint steps used.
-- **Layout:** the top row holds the trainer's name and filter on the left, the
-  scramble in the middle and _Mistake_ and _← Full timer_ on the right. Below it,
-  the hint and the timer sit in the middle of the window, between the session's
-  solves on the left and the per-case table on the right.
-- **Per-case table:** n, avg, ao5 and err% (mistake rate) for every case
-  trained, sortable by any column; hover a row for the case's best time and how
-  often you used hints. Avg/ao5 leave out mistakes; hinted solves count. The
-  summary's best and mean leave out mistakes too.
-- The Learn tab shows each case's best and average trainer time.
-- The same shortcuts work (⌘1/⌘2/⌘3, ⌘Z). Inspection is off by default; the
-  trainer has its own ⚙ toggle, separate from the full timer's.
+Pick what to look at: the full timer or a trainer, one session or all, and, for
+a trainer, one case or all. You get:
 
-### Stats tab
+- an **overview** (best, mean, median, consistency and more), and current and
+  best averages of 5, 12, 50 and 100;
+- the share of solves **under a time** you choose;
+- the **distribution** of your times, with a fitted curve. Its μ is your typical
+  clean solve, σ how consistent those are, and τ how big your tail of bad solves
+  is;
+- your **personal bests** over time;
+- a **learning curve**: your trend, where it's heading and how fast you're
+  improving;
+- for a trainer, **which cases to drill**: your slowest cases, with their
+  mistake rate and hint use.
 
-- Choose a _Source_ (the full timer or a set's trainer), a _Session_ (one, or all)
-  and, for trainers, a _Case_ (one, or all). Trainer statistics leave out
-  mistakes.
-- **Overview:** solves, DNFs, best, worst, mean, median, standard deviation,
-  variation (CV: std / mean, lower is more consistent), 10th and 90th percentile.
-- **Averages:** current and best ao5, ao12, ao50 and ao100.
-- **Sub-X:** the share of solves under a time you choose.
-- **Ex-Gaussian fit:** solve times are modelled as a normal distribution plus an
-  exponential tail. μ is your typical clean solve, σ how consistent clean solves
-  are, τ how big your tail of bad solves is; D (Kolmogorov-Smirnov) says how well
-  the model fits (smaller is better).
-- **Distribution** and **personal bests over time**, side by side: a histogram
-  of your times with the fitted curve (hover for bar counts), and every new best
-  single and best ao5, carried on to your latest solve (hover for the record and
-  when it was set).
-- **Learning curve:** your times by solve number with a fitted trend that levels
-  off (an exponential learning curve), projected half as far again, with the
-  plateau it approaches and how many solves it takes to halve the remaining gap.
-  A trend is only reported when it's clearly bigger than random scatter.
-- **Which cases to drill** (trainers, all cases): the slowest cases' mean time,
-  mistake rate and hint use, side by side.
-- The tab only computes and draws when you open it, and reopening it without new
-  solves is instant. The scroll wheel scrolls the page even over the plots.
+### Settings
 
-## Requirements
+Open **Settings** with <kbd>⌘</kbd> <kbd>,</kbd> or _Settings…_ in the cog
+menu. Choose a theme, with a live preview:
 
-- Python 3.12 or newer, and [uv](https://docs.astral.sh/uv/) (it can install Python and all dependencies).
-- macOS is the main target; Linux and Windows should work but aren't tested.
+- _Calm_: soft rounded panels and a violet accent (the default);
+- _Clean_: like a native Mac app;
+- _Bold_: big type, and the timer as a coloured card.
 
-## Run
+Each theme comes in light and dark. Follow the system, or choose one.
 
-```shell
-uv run cubetrainer
-```
+### Keyboard shortcuts
 
-### As a standalone app
+| Shortcut                                                                          | Action                             |
+| --------------------------------------------------------------------------------- | ---------------------------------- |
+| <kbd>Space</kbd> (hold, then release)                                             | Start inspection, or the solve     |
+| Any key                                                                           | Stop the timer                     |
+| <kbd>Esc</kbd>                                                                    | Cancel a hold or inspection        |
+| <kbd>⌘</kbd> <kbd>1</kbd> / <kbd>⌘</kbd> <kbd>2</kbd> / <kbd>⌘</kbd> <kbd>3</kbd> | Mark the last solve OK / +2 / DNF  |
+| <kbd>⌘</kbd> <kbd>Z</kbd>                                                         | Delete the last solve (asks first) |
+| <kbd>→</kbd>                                                                      | Trainer: show the next hint move   |
+| <kbd>M</kbd>                                                                      | Trainer: flag a mistake            |
+| <kbd>⌘</kbd> <kbd>,</kbd>                                                         | Open Settings                      |
 
-Build CubeTrainer as an app that runs without Python (about 250 MB, about a
-minute), and install it, from the project folder:
-
-```shell
-uv run python -m app_bundle.build_app --install
-```
-
-(With plain Python: `pip install ".[app]"`, then `python -m app_bundle.build_app
---install`.) Without `--install` it's only built, in `dist/`; `--uninstall`
-removes what `--install` added. Where it goes:
-
-- macOS: `/Applications/CubeTrainer.app` (Spotlight, Launchpad and the Dock find
-  it);
-- Windows: `%LOCALAPPDATA%\Programs\CubeTrainer`, with a Start Menu shortcut;
-- Linux: `~/.local/share/cubetrainer`, with a launcher entry and icon.
-
-Each system builds its own app; Windows and Linux builds are untested. The app
-uses the same data folder as `cubetrainer`, and holds a copy of the code: rebuild
-after changes.
-
-Installing also prepares the app's font cache, which can take half a minute once,
-so the app itself starts quickly; `--uninstall` removes that cache too.
-
-## Data
-
-Solves, case statuses and your case edits are stored in a SQLite database
-(uploaded images are copied into an `images` folder next to it):
-
-- macOS: `~/Library/Application Support/CubeTrainer/cubetrainer.db`
-- elsewhere: the platform's user data directory (via `platformdirs`), e.g.
-  `~/.local/share/CubeTrainer/` on Linux
-
-Set `CUBETRAINER_DATA_DIR` to use another directory, e.g. to experiment without
-touching your real times:
-
-```shell
-CUBETRAINER_DATA_DIR=/tmp/cubetrainer uv run cubetrainer
-```
-
-The schema is versioned and upgraded automatically on launch.
+On Windows and Linux, use <kbd>Ctrl</kbd> instead of <kbd>⌘</kbd>. The keyboard
+button in the timer's corner (or _View → Keyboard Shortcuts_) lists the
+shortcuts in the app.
 
 ## Development
 
-Run all checks (lint, format, types, tests):
+Install [uv](https://docs.astral.sh/uv/), then run the checks (lint, format,
+types and tests) from the project folder:
 
 ```shell
 uv run ruff check && uv run ruff format --check && uv run ty check && uv run pytest
 ```
 
-- Ruff extends the global config at `~/.config/ruff/ruff.toml`;
-  `pyproject.toml` only adds test-specific ignores.
-- Tests run headless (`QT_QPA_PLATFORM=offscreen`); set `QT_QPA_PLATFORM=cocoa`
-  to run them against the real macOS display.
+A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone
+with `git config core.hooksPath .githooks`.
 
-A pre-commit hook in `.githooks/` runs ruff and ty. Enable it once per clone:
+## Licence
 
-```shell
-git config core.hooksPath .githooks
-```
+CubeTrainer's source code is under the [MIT licence](LICENSE).
 
-### Project layout
+It uses [kociemba](https://github.com/muodov/kociemba), which is under the
+GPLv2. A built app includes kociemba, so if you share a built app, you must do
+so under the terms of the GPLv2.
 
-```
-src/cubetrainer/
-  app.py               entry point
-  timing.py            timer state machine (Qt-free)
-  inspection.py        inspection countdown, penalties and warnings
-  sound.py             generated inspection beeps
-  settings.py          key-value settings
-  sessions.py          sessions (in memory; the database version is in db.py)
-  solves.py            Solve, Penalty, SolveList
-  stats.py             averages, means, bests, summary
-  fits.py              ex-Gaussian fit (scipy)
-  formatting.py        time / solve display strings
-  scramble_history.py  ◀ / ▶ scramble history
-  db.py                SQLite storage and migrations
-  cube/
-    model.py           sticker-level cube model and move notation
-    scramble.py        random-state scrambles
-    render.py          top-down last-layer images
-  cases/
-    catalog.py         case sets, cases, learning status
-    recognition.py     identify OLL / PLL cases regardless of AUF
-    trainer.py         case scrambles and recognising them
-    filters.py         case filter and case probabilities
-    editing.py         checking a user's algorithm
-    data/              bundled OLL and PLL cases and default algorithms
-  ui/                  Qt widgets: main window, timer/trainer/learn pages,
-                       dialogs, time graph (matplotlib)
-app_bundle/            builds CubeTrainer.app: PyInstaller recipe,
-                       launcher, icon
-tests/                 pytest + pytest-qt
-```
+The bundled fonts are under the SIL Open Font License:
 
-## License
-
-[MIT](LICENSE). The bundled fonts are under the SIL Open Font License: Geist and
-Geist Mono © Vercel ([licence](src/cubetrainer/ui/fonts/OFL-Geist.txt)), Space
-Grotesk © The Space Grotesk Project Authors
-([licence](src/cubetrainer/ui/fonts/OFL-SpaceGrotesk.txt)) and Space Mono
-© The Space Mono Project Authors ([licence](src/cubetrainer/ui/fonts/OFL-SpaceMono.txt)).
+- Geist and Geist Mono © Vercel ([licence](src/cubetrainer/ui/fonts/OFL-Geist.txt))
+- Space Grotesk © The Space Grotesk Project Authors
+  ([licence](src/cubetrainer/ui/fonts/OFL-SpaceGrotesk.txt))
+- Space Mono © The Space Mono Project Authors
+  ([licence](src/cubetrainer/ui/fonts/OFL-SpaceMono.txt))
